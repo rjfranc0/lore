@@ -102,6 +102,26 @@ Built-in behaviors (like `from-claude`, created during `init`) are real director
 
 ---
 
+### `lore sync`
+
+Reconcile `~/.agents/AGENTS.md` against behavior directories currently on disk.
+
+- **Removes** entries whose `<!-- name -->` block has no corresponding directory
+  in `~/.agents/behaviors/`.
+- **Adds** entries for directories present in `~/.agents/behaviors/` but not yet
+  referenced in `AGENTS.md`.
+- Leaves valid, already-registered entries untouched (no duplicates, no reordering).
+
+Reports what changed, or `✓ AGENTS.md already in sync` when nothing did.
+
+Requires `lore init` to have run first.
+
+Typical use: after splitting a built-in behavior into multiple new ones and
+removing the old directory, `lore sync` updates AGENTS.md in one step without
+needing to delete and recreate it.
+
+---
+
 ### `lore list`
 
 Shows all installed skills and behaviors with their symlink targets.

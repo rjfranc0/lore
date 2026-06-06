@@ -274,6 +274,67 @@ make_behavior() {  # make_behavior <base_dir> <name> [entry=RULES.md]
   [[ "$output" == *"(built-in)"* ]]
 }
 
+# ── sync ──────────────────────────────────────────────────────────────────────
+
+@test "sync: adds behavior on disk not yet in AGENTS.md" {
+  "$LORE" init
+  mkdir -p "$AGENTS_DIR/behaviors/new-b"
+  printf 'rules\n' > "$AGENTS_DIR/behaviors/new-b/RULES.md"
+  run "$LORE" sync
+  [ "$status" -eq 0 ]
+  grep -qF "<!-- new-b -->" "$AGENTS_DIR/AGENTS.md"
+  grep -qF "@$AGENTS_DIR/behaviors/new-b/RULES.md" "$AGENTS_DIR/AGENTS.md"
+}
+
+@test "sync: removes stale entry when behavior dir is gone" {
+  "$LORE" init
+  make_behavior "$HOME/bsrc" "bye"
+  cd "$HOME/bsrc" && "$LORE" behavior add bye
+  rm "$AGENTS_DIR/behaviors/bye"
+  run "$LORE" sync
+  [ "$status" -eq 0 ]
+  ! grep -qF "<!-- bye -->" "$AGENTS_DIR/AGENTS.md"
+}
+
+@test "sync: is a no-op when already in sync" {
+  "$LORE" init
+  make_behavior "$HOME/bsrc" "steady"
+  cd "$HOME/bsrc" && "$LORE" behavior add steady
+  run "$LORE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already in sync"* ]]
+  local count
+  count=$(grep -c "<!-- steady -->" "$AGENTS_DIR/AGENTS.md" || true)
+  [ "$count" -eq 1 ]
+}
+
+@test "sync: handles split scenario — removes old, adds new" {
+  "$LORE" init
+  # Simulate from-claude built-in (real dir, registered in AGENTS.md)
+  mkdir -p "$AGENTS_DIR/behaviors/from-claude"
+  printf 'old rules\n' > "$AGENTS_DIR/behaviors/from-claude/RULES.md"
+  printf '\n<!-- from-claude -->\n@%s/behaviors/from-claude/RULES.md\n' \
+    "$AGENTS_DIR" >> "$AGENTS_DIR/AGENTS.md"
+  # Create the two new split behaviors
+  mkdir -p "$AGENTS_DIR/behaviors/part-a"
+  printf 'part a\n' > "$AGENTS_DIR/behaviors/part-a/RULES.md"
+  mkdir -p "$AGENTS_DIR/behaviors/part-b"
+  printf 'part b\n' > "$AGENTS_DIR/behaviors/part-b/RULES.md"
+  # Delete the old one
+  rm -rf "$AGENTS_DIR/behaviors/from-claude"
+  run "$LORE" sync
+  [ "$status" -eq 0 ]
+  ! grep -qF "<!-- from-claude -->" "$AGENTS_DIR/AGENTS.md"
+  grep -qF "<!-- part-a -->" "$AGENTS_DIR/AGENTS.md"
+  grep -qF "<!-- part-b -->" "$AGENTS_DIR/AGENTS.md"
+}
+
+@test "sync: fails with helpful message before init" {
+  run "$LORE" sync
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"lore init"* ]]
+}
+
 # ── version ───────────────────────────────────────────────────────────────────
 
 @test "version: prints lore version string" {

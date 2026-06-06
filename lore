@@ -223,6 +223,50 @@ cmd_behavior_remove() {
   done
 }
 
+# ── sync ──────────────────────────────────────────────────────────────────────
+
+cmd_sync() {
+  [[ -f "$AGENTS_MD" ]] || die "Run 'lore init' first"
+
+  local added=0 removed=0
+
+  # Step 1: remove stale entries (in AGENTS.md but dir gone from disk)
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+    if [[ ! -d "$BEHAVIORS_DIR/$name" ]]; then
+      local tmp; tmp=$(mktemp)
+      awk -v name="$name" '
+        $0 == "<!-- " name " -->" { skip=1; next }
+        skip { skip=0; next }
+        { print }
+      ' "$AGENTS_MD" > "$tmp" && mv "$tmp" "$AGENTS_MD"
+      ok "Removed stale entry: $name"
+      removed=$((removed + 1))
+    fi
+  done < <(grep -E '^<!-- [^[:space:]]+ -->$' "$AGENTS_MD" \
+           | sed 's/^<!-- //;s/ -->$//' || true)
+
+  # Step 2: add missing entries (dir on disk but not in AGENTS.md)
+  shopt -s nullglob
+  local bdir bname entry
+  for bdir in "$BEHAVIORS_DIR"/*; do
+    [[ -d "$bdir" ]] || continue
+    bname=$(basename "$bdir")
+    if entry=$(behavior_entry "$bdir" 2>/dev/null); then
+      if ! grep -qxF "@$entry" "$AGENTS_MD"; then
+        printf '\n<!-- %s -->\n@%s\n' "$bname" "$entry" >> "$AGENTS_MD"
+        ok "Added $bname to AGENTS.md"
+        added=$((added + 1))
+      fi
+    fi
+  done
+  shopt -u nullglob
+
+  if [[ $added -eq 0 && $removed -eq 0 ]]; then
+    ok "AGENTS.md already in sync"
+  fi
+}
+
 # ── list ──────────────────────────────────────────────────────────────────────
 
 cmd_list() {
@@ -356,6 +400,16 @@ COMMANDS
               Built-in behaviors (e.g. from-claude) must be removed
               manually — lore will tell you exactly what to do.
 
+       sync
+              Reconcile AGENTS.md against behaviors currently on disk.
+
+              Removes entries whose behavior directory no longer exists.
+              Adds entries for directories present on disk but not yet
+              registered. Leaves valid entries untouched.
+
+              Exits 0 in all cases, including when nothing changed.
+              Requires 'lore init' to have run first.
+
        list
               Print all installed skills and behaviors with symlink
               targets. Flags broken symlinks with ✗ broken.
@@ -457,6 +511,7 @@ lore — Layered Orchestration for Rules and Extensions
   lore remove  <skill> [...]          uninstall skill(s)
   lore behavior add    <name> [...]   add behavior(s) from current directory
   lore behavior remove <name> [...]   remove behavior(s)
+  lore sync                           reconcile AGENTS.md from disk
   lore list                           show installed skills and behaviors
   lore version                        print version
   lore help                           full manual
@@ -477,6 +532,7 @@ case "${1:-}" in
       remove) shift 2; cmd_behavior_remove "$@" ;;
       *) die "Usage: lore behavior <add|remove> <name...>" ;;
     esac ;;
+  sync)     cmd_sync ;;
   list)     cmd_list ;;
   version)  cmd_version ;;
   help)     cmd_help ;;

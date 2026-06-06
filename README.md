@@ -77,6 +77,7 @@ Behaviors work the same way, with one extra step. When you run `lore behavior ad
 | `lore remove <skill> [...]` | Uninstall skill(s) |
 | `lore behavior add <name> [...]` | Install behavior(s) and update `AGENTS.md` |
 | `lore behavior remove <name> [...]` | Remove behavior(s) |
+| `lore sync` | Reconcile `AGENTS.md` from disk |
 | `lore list` | Show everything that's installed |
 | `lore version` | Print the version |
 | `lore help` | Full manual |
