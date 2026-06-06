@@ -17,14 +17,15 @@ install_binary() {
 
   # Running from a clone: lore is next to this script
   local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || true)"
 
   if [[ -n "$script_dir" && -f "$script_dir/lore" ]]; then
     cp "$script_dir/lore" "$INSTALL_DIR/lore"
   else
     # Running via curl | bash: download from GitHub
     command -v curl > /dev/null 2>&1 || die "curl is required"
-    curl -fsSL "$REPO_RAW/lore" -o "$INSTALL_DIR/lore"
+    curl -fsSL "$REPO_RAW/lore" -o "$INSTALL_DIR/lore" \
+      || die "Download failed — check URL: $REPO_RAW/lore"
   fi
 
   chmod +x "$INSTALL_DIR/lore"
