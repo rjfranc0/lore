@@ -1,0 +1,420 @@
+#!/usr/bin/env bash
+# lore — Layered Orchestration for Rules and Extensions
+set -euo pipefail
+
+AGENTS_DIR="${AGENTS_DIR:-$HOME/.agents}"
+SKILLS_DIR="$AGENTS_DIR/skills"
+BEHAVIORS_DIR="$AGENTS_DIR/behaviors"
+AGENTS_MD="$AGENTS_DIR/AGENTS.md"
+
+# ── utils ─────────────────────────────────────────────────────────────────────
+
+die()  { echo "✗ $*" >&2; exit 1; }
+ok()   { echo "✓ $*"; }
+warn() { echo "⚠  $*"; }
+note() { echo "  $*"; }
+
+sedi() { case "$(uname -s)" in Darwin) sed -i '' "$@";; *) sed -i "$@";; esac; }
+
+behavior_entry() {
+  local dir="$1"
+  for name in RULES.md BEHAVIOR.md README.md; do
+    [[ -f "$dir/$name" ]] && echo "$dir/$name" && return
+  done
+  local first
+  first=$(find "$dir" -maxdepth 1 -name "*.md" -print -quit 2>/dev/null || true)
+  [[ -n "$first" ]] && echo "$first" && return
+  die "No .md entry point found in $dir"
+}
+
+# ── init ──────────────────────────────────────────────────────────────────────
+
+cmd_init() {
+  mkdir -p "$SKILLS_DIR" "$BEHAVIORS_DIR"
+
+  local claude_dir="$HOME/.claude"
+  local claude_md="$claude_dir/CLAUDE.md"
+  local claude_skills="$claude_dir/skills"
+  mkdir -p "$claude_dir"
+
+  # ── AGENTS.MD ─────────────────────────────────────────────────────────────
+
+  if [[ ! -f "$AGENTS_MD" ]]; then
+    local should_migrate=false
+
+    if [[ -f "$claude_md" ]]; then
+      # Only migrate if CLAUDE.md has real content and isn't already a lore pointer
+      if ! grep -qF "@$AGENTS_MD" "$claude_md" 2>/dev/null; then
+        local content; content=$(cat "$claude_md")
+        if [[ -n "$(echo "$content" | tr -d '[:space:]')" ]]; then
+          should_migrate=true
+        fi
+      fi
+    fi
+
+    if [[ "$should_migrate" == true ]]; then
+      # Case 2: migrate existing CLAUDE.md into a built-in behavior
+      local from_dir="$BEHAVIORS_DIR/from-claude"
+      mkdir -p "$from_dir"
+      cat "$claude_md" > "$from_dir/RULES.md"
+
+      cat > "$AGENTS_MD" << EOF
+<!-- managed by lore — do not edit -->
+<!-- skills auto-loaded from ~/.agents/skills/ -->
+
+<!-- from-claude -->
+@$from_dir/RULES.md
+EOF
+      ok "Migrated CLAUDE.md → $from_dir/RULES.md"
+      ok "Created $AGENTS_MD"
+      note ""
+      note "Your old instructions live at:  $from_dir/RULES.md"
+      note "Do not edit:                    $claude_md"
+      note "Do not edit:                    $AGENTS_MD"
+      note "Both are managed by lore."
+    else
+      # Case 1: clean install
+      cat > "$AGENTS_MD" << 'EOF'
+<!-- managed by lore — do not edit -->
+<!-- skills auto-loaded from ~/.agents/skills/ -->
+EOF
+      ok "Created $AGENTS_MD"
+    fi
+  else
+    ok "AGENTS.md exists — skipping"
+  fi
+
+  # ── Migrate existing real skills dir ──────────────────────────────────────
+
+  if [[ -d "$claude_skills" && ! -L "$claude_skills" ]]; then
+    shopt -s nullglob
+    local moved=0
+    for item in "$claude_skills"/*; do
+      [[ -e "$item" || -L "$item" ]] || continue
+      local name; name=$(basename "$item")
+      if [[ -e "$SKILLS_DIR/$name" ]]; then
+        warn "Skill '$name' already exists in $SKILLS_DIR — skipping"
+      else
+        mv "$item" "$SKILLS_DIR/"
+        moved=$((moved + 1))
+      fi
+    done
+    shopt -u nullglob
+    if [[ $moved -gt 0 ]]; then
+      ok "Moved $moved skill(s) to $SKILLS_DIR"
+    fi
+    rmdir "$claude_skills" 2>/dev/null || true
+  fi
+
+  # ── Wire Claude ───────────────────────────────────────────────────────────
+
+  echo "@$AGENTS_MD" > "$claude_md"
+  ok "Wrote $claude_md"
+
+  if [[ -e "$claude_skills" && ! -L "$claude_skills" ]]; then
+    die "$claude_skills is still a real directory — check for unmigrated items"
+  fi
+  [[ -L "$claude_skills" ]] && rm "$claude_skills"
+  ln -s "$SKILLS_DIR" "$claude_skills"
+  ok "Linked ~/.claude/skills → $SKILLS_DIR"
+}
+
+# ── install / remove ──────────────────────────────────────────────────────────
+
+cmd_install() {
+  [[ $# -gt 0 ]] || die "Usage: lore install <skill> [...]"
+  for skill in "$@"; do
+    local src="$PWD/$skill"
+    local dst="$SKILLS_DIR/$skill"
+    [[ -d "$src" ]] || die "'$skill' not found in $PWD"
+    if [[ -L "$dst" ]]; then
+      warn "$skill already installed"
+      note "existing  → $(readlink "$dst")"
+      note "attempted → $src"
+    else
+      ln -s "$src" "$dst"
+      ok "Installed $skill"
+    fi
+  done
+}
+
+cmd_remove() {
+  [[ $# -gt 0 ]] || die "Usage: lore remove <skill> [...]"
+  for skill in "$@"; do
+    local dst="$SKILLS_DIR/$skill"
+    if [[ -L "$dst" ]]; then
+      rm "$dst"
+      ok "Removed $skill"
+    else
+      warn "$skill is not installed"
+    fi
+  done
+}
+
+# ── behavior ──────────────────────────────────────────────────────────────────
+
+cmd_behavior_add() {
+  [[ $# -gt 0 ]] || die "Usage: lore behavior add <name> [...]"
+  for name in "$@"; do
+    local src="$PWD/$name"
+    local dst="$BEHAVIORS_DIR/$name"
+    [[ -d "$src" ]] || die "'$name' not found in $PWD"
+
+    if [[ ! -L "$dst" ]]; then
+      ln -s "$src" "$dst"
+      ok "Linked behavior $name"
+    fi
+
+    local entry
+    entry=$(behavior_entry "$dst")
+
+    if ! grep -qF "@$entry" "$AGENTS_MD"; then
+      printf '\n<!-- %s -->\n@%s\n' "$name" "$entry" >> "$AGENTS_MD"
+      ok "Added $name to AGENTS.md"
+    else
+      warn "$name already in AGENTS.md"
+    fi
+  done
+}
+
+cmd_behavior_remove() {
+  [[ $# -gt 0 ]] || die "Usage: lore behavior remove <name> [...]"
+  for name in "$@"; do
+    local dst="$BEHAVIORS_DIR/$name"
+    if [[ -L "$dst" ]]; then
+      sedi "/<!-- $name -->/,+1d" "$AGENTS_MD"
+      rm "$dst"
+      ok "Removed behavior $name"
+    elif [[ -d "$dst" ]]; then
+      warn "$name is a built-in behavior — remove manually:"
+      note "rm -rf $dst"
+      note "Then remove its <!-- $name --> block from $AGENTS_MD"
+    else
+      warn "$name is not installed"
+    fi
+  done
+}
+
+# ── list ──────────────────────────────────────────────────────────────────────
+
+cmd_list() {
+  local found
+
+  echo "Skills:"
+  found=0
+  shopt -s nullglob
+  for f in "$SKILLS_DIR"/*; do
+    if [[ -L "$f" ]]; then
+      local target; target=$(readlink "$f")
+      if [[ -d "$f" ]]; then
+        printf "  %-24s → %s\n" "$(basename "$f")" "$target"
+      else
+        printf "  %-24s → %s  ✗ broken\n" "$(basename "$f")" "$target"
+      fi
+      found=1
+    fi
+  done
+  shopt -u nullglob
+  if [[ $found -eq 0 ]]; then echo "  (none)"; fi
+
+  echo ""
+  echo "Behaviors:"
+  found=0
+  shopt -s nullglob
+  for f in "$BEHAVIORS_DIR"/*; do
+    if [[ -L "$f" ]]; then
+      local target; target=$(readlink "$f")
+      if [[ -d "$f" ]]; then
+        printf "  %-24s → %s\n" "$(basename "$f")" "$target"
+      else
+        printf "  %-24s → %s  ✗ broken\n" "$(basename "$f")" "$target"
+      fi
+      found=1
+    elif [[ -d "$f" ]]; then
+      printf "  %-24s   (built-in)\n" "$(basename "$f")"
+      found=1
+    fi
+  done
+  shopt -u nullglob
+  if [[ $found -eq 0 ]]; then echo "  (none)"; fi
+}
+
+# ── man ───────────────────────────────────────────────────────────────────────
+
+cmd_man() {
+  local pager="${PAGER:-less}"
+  command -v "$pager" > /dev/null 2>&1 || pager=cat
+  "$pager" << 'MANEOF'
+LORE(1)                      User Commands                      LORE(1)
+
+NAME
+       lore — local AI skill manager
+       LORE = Layered Orchestration for Rules and Extensions
+
+SYNOPSIS
+       lore <command> [args...]
+
+DESCRIPTION
+       lore manages ~/.agents/, a universal config directory for AI
+       agents. Skills and behaviors are installed as symlinks, keeping
+       source files in their repos and the config layer thin.
+
+       Skills are exposed to Claude via ~/.claude/skills → ~/.agents/skills.
+       Behaviors are listed in ~/.agents/AGENTS.md as @import lines.
+
+COMMANDS
+       init
+              Bootstrap ~/.agents/ and wire Claude. Handles two cases:
+
+              Case 1 — empty install:
+                     Creates AGENTS.md, skills/, and behaviors/.
+                     Writes @~/.agents/AGENTS.md into ~/.claude/CLAUDE.md.
+                     Symlinks ~/.claude/skills → ~/.agents/skills.
+
+              Case 2 — existing CLAUDE.md or skills/:
+                     Migrates CLAUDE.md content to
+                         ~/.agents/behaviors/from-claude/RULES.md
+                     Moves any real skills into ~/.agents/skills/.
+                     Overwrites CLAUDE.md with the @import.
+                     Logs where old instructions now live.
+
+              Idempotent. Multi-account support: planned.
+
+       install <skill> [...]
+              Install one or more skills from the current directory.
+              Creates: ~/.agents/skills/<skill> → $PWD/<skill>
+
+              On duplicate, logs both paths:
+                  ⚠  cooking-chef already installed
+                     existing  → /old/path
+                     attempted → /new/path
+
+       remove <skill> [...]
+              Remove skill symlinks. Source dirs are never touched.
+
+       behavior add <name> [...]
+              Install behaviors from the current directory.
+
+              1.  Creates symlink:
+                      ~/.agents/behaviors/<name> → $PWD/<name>
+
+              2.  Locates entry .md (resolution order):
+                      RULES.md → BEHAVIOR.md → README.md → first .md
+
+              3.  Appends to AGENTS.md:
+                      <!-- name -->
+                      @/absolute/path/to/entry.md
+
+              Idempotent. Each step runs only if not already done.
+
+       behavior remove <name> [...]
+              Removes the behavior symlink and its <!-- name --> + @path
+              block from AGENTS.md.
+
+              Built-in behaviors (e.g. from-claude) must be removed
+              manually — lore will tell you exactly what to do.
+
+       list
+              Print all installed skills and behaviors with symlink
+              targets. Flags broken symlinks with ✗ broken.
+              Built-in behaviors (e.g. from-claude) show as (built-in).
+
+       man    Open this manual. Uses $PAGER, falls back to cat.
+
+       help   Print short usage summary.
+
+AGENTS.MD FORMAT
+       The file is fully managed by lore. Do not edit it manually.
+
+           <!-- managed by lore — do not edit -->
+           <!-- skills auto-loaded from ~/.agents/skills/ -->
+
+           <!-- from-claude -->
+           @/home/you/.agents/behaviors/from-claude/RULES.md
+
+           <!-- restaurant-rules -->
+           @/home/you/.agents/behaviors/restaurant-rules/RULES.md
+
+       Each behavior is a two-line block: a comment for identification
+       and an @path line that Claude imports. The comment is what lore
+       uses to find and remove the block.
+
+ENVIRONMENT
+       AGENTS_DIR
+              Override the base directory. Default: ~/.agents
+              All derived paths move with it.
+
+              AGENTS_DIR=/tmp/test-agents lore init
+
+FILES
+       ~/.agents/AGENTS.md          Universal agent instructions
+       ~/.agents/skills/            Skill symlinks
+       ~/.agents/behaviors/         Behavior symlinks + built-ins
+       ~/.claude/CLAUDE.md          Managed by lore: @import → AGENTS.md
+       ~/.claude/skills             Symlink → ~/.agents/skills
+
+EXAMPLES
+       Bootstrap:
+           lore init
+
+       Install skills from a cloned repo:
+           cd ~/repos/ai-restaurant/skills
+           lore install cooking-chef dishwasher
+
+       Add a behavior:
+           cd ~/repos/ai-restaurant/behaviors
+           lore behavior add restaurant-rules
+
+       Remove a behavior (cleans AGENTS.md too):
+           lore behavior remove restaurant-rules
+
+       List with status:
+           lore list
+
+       Dry-run against a temp dir:
+           AGENTS_DIR=/tmp/test-agents lore init
+
+NOTES
+       Uninstalling is non-destructive — only symlinks are removed,
+       source files in repos are never touched.
+
+       sedi() handles the BSD/GNU sed -i flag difference at runtime,
+       so the script works on both macOS and Linux without changes.
+
+       Multi-account Claude support (multiple ~/.claude-<account>/
+       directories) is planned for a future release.
+
+LORE(1)                      User Commands                      LORE(1)
+MANEOF
+}
+
+# ── dispatch ──────────────────────────────────────────────────────────────────
+
+case "${1:-help}" in
+  init)     cmd_init ;;
+  install)  shift; cmd_install "$@" ;;
+  remove)   shift; cmd_remove "$@" ;;
+  behavior)
+    case "${2:-}" in
+      add)    shift 2; cmd_behavior_add "$@" ;;
+      remove) shift 2; cmd_behavior_remove "$@" ;;
+      *) die "Usage: lore behavior <add|remove> <name...>" ;;
+    esac ;;
+  list)     cmd_list ;;
+  man)      cmd_man ;;
+  help|*)
+    cat << 'EOF'
+lore — Layered Orchestration for Rules and Extensions
+
+  lore init                           bootstrap ~/.agents + Claude integration
+  lore install <skill> [...]          install skill(s) from current directory
+  lore remove  <skill> [...]          uninstall skill(s)
+  lore behavior add    <name> [...]   add behavior(s) from current directory
+  lore behavior remove <name> [...]   remove behavior(s)
+  lore list                           show installed skills and behaviors
+  lore man                            full manual
+
+  AGENTS_DIR  override base dir (default: ~/.agents)
+EOF
+    ;;
+esac
