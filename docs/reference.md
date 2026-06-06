@@ -26,6 +26,15 @@ Bootstrap `~/.agents/` and wire Claude integration.
 
 `init` is idempotent — safe to re-run. It skips any step that's already been done.
 
+**Skill collision is a hard stop.** If a real skill in `~/.claude/skills/` shares
+a name with one already in `~/.agents/skills/`, lore keeps the existing one,
+warns about the conflict, and exits *before* touching `CLAUDE.md`. This avoids
+leaving you with a half-wired config. Resolve the conflict by hand, then re-run.
+
+**Recovery.** If `~/.agents/AGENTS.md` is ever deleted, re-running `lore init`
+rebuilds it and re-registers every behavior still present on disk, so you don't
+lose your `@import` entries. Each re-registered behavior is logged.
+
 > Multi-account support (`~/.claude-<account>/` directories) is planned but not yet implemented.
 
 ---
@@ -48,17 +57,23 @@ Install one or more skills from the current directory.
 
 Errors if the source directory doesn't exist in `$PWD`.
 
+A trailing slash from tab-completion (`lore install my-skill/`) is stripped, so
+`my-skill` and `my-skill/` behave identically.
+
 ---
 
 ### `lore remove <skill> [...]`
 
-Remove skill symlinks from `~/.agents/skills/`. Source directories in repos are never touched.
+Remove skill symlinks from `~/.agents/skills/`. Source directories in repos are
+never touched. A trailing slash is stripped, same as `install`.
 
 ---
 
 ### `lore behavior add <name> [...]`
 
-Install behaviors from the current directory.
+Install behaviors from the current directory. Requires `lore init` to have run
+first — if `~/.agents/AGENTS.md` doesn't exist yet, lore stops and tells you to
+run `lore init`.
 
 For each name, three steps run in order:
 
@@ -71,13 +86,17 @@ For each name, three steps run in order:
    @/absolute/path/to/entry.md
    ```
 
-Each step is independently idempotent.
+Each step is independently idempotent. A trailing slash on the name is stripped.
 
 ---
 
 ### `lore behavior remove <name> [...]`
 
 Removes the behavior symlink and its `<!-- name --> + @path` block from `AGENTS.md`.
+
+The block is matched by **exact name**, not as a pattern. A behavior named `a.c`
+removes only `a.c` — it won't accidentally clobber a sibling like `axc`. A
+trailing slash on the name is stripped.
 
 Built-in behaviors (like `from-claude`, created during `init`) are real directories, not symlinks. lore refuses to remove them automatically and instead tells you the exact commands to run manually.
 
@@ -103,15 +122,20 @@ Behaviors:
 
 ---
 
-### `lore man`
+### `lore version`
 
-Opens the embedded manual. Uses `$PAGER` (default: `less`), falls back to `cat`.
+Prints the lore version string, e.g. `lore 0.1.0`.
 
 ---
 
 ### `lore help`
 
-Prints a short usage summary.
+Opens the full embedded manual (the same content as this reference). Uses
+`$PAGER` (default: `less`), falls back to `cat`.
+
+Running `lore` with **no arguments** prints a short usage summary and exits 0.
+An **unknown** subcommand prints that same short summary to stderr but exits 1,
+so a typo doesn't look like success in a script.
 
 ---
 
@@ -158,8 +182,9 @@ If none are found, lore errors.
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTS_DIR` | `~/.agents` | Base directory. All derived paths move with it. |
-| `PAGER` | `less` | Pager used by `lore man`. |
+| `AGENTS_DIR` | `~/.agents` | Base directory. All derived paths (`skills/`, `behaviors/`, `AGENTS.md`) move with it. |
+| `CLAUDE_DIR` | `~/.claude` | Claude config directory that `init` wires up. Set it independently of `AGENTS_DIR` for full test isolation or multi-account setups. |
+| `PAGER` | `less` | Pager used by `lore help`. |
 
 ---
 
@@ -177,15 +202,29 @@ If none are found, lore errors.
 
 ## Testing without touching real config
 
-Use `AGENTS_DIR` to point lore at a throwaway directory:
+Point both `AGENTS_DIR` and `CLAUDE_DIR` at throwaway directories. With both set,
+lore reads and writes nothing under your real `~/.agents` or `~/.claude`:
 
 ```bash
-AGENTS_DIR=/tmp/lore-test lore init
+export AGENTS_DIR=/tmp/lore-test/agents
+export CLAUDE_DIR=/tmp/lore-test/claude
+lore init
 
 mkdir -p /tmp/fake-repo/skills/my-skill
 touch /tmp/fake-repo/skills/my-skill/SKILL.md
 cd /tmp/fake-repo/skills
 
-AGENTS_DIR=/tmp/lore-test lore install my-skill
-AGENTS_DIR=/tmp/lore-test lore list
+lore install my-skill
+lore list
+```
+
+## Automated tests
+
+The repo ships a [bats](https://github.com/bats-core/bats-core) suite that runs
+lore against synthetic fixtures in temp dirs — your real config is never touched.
+
+```bash
+brew install bats-core      # or your package manager of choice
+bats test/lore.bats         # the CLI
+bats test/install.bats      # the installer
 ```

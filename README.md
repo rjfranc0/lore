@@ -2,43 +2,40 @@
 
 **L**ayered **O**rchestration for **R**ules and **E**xtensions
 
-Universal skill and behavior manager for AI agents. Clone a repo, run one command, skills are live. No package registry, no vendor lock-in — just symlinks.
+A small tool for managing the skills and behaviors your AI agents use. Clone a repo, run one command, and the skills are live. There's no package registry behind it and nothing to lock you in — under the hood it's just symlinks.
 
----
+## Why it exists
 
-## The problem
+If you've tried `npx skills add` on a heavy repo, you know it tends to choke. And once you're running more than one agent, your config ends up scattered: a bit in `~/.claude/`, a bit in `~/.cursor/`, more somewhere else. You either install everything twice or quietly let the setups drift apart. There's no agreed-on home for agent rules, and no clean way to mix behaviors coming from different repos.
 
-`npx skills add` chokes on heavy repos. Skill configs scatter across `~/.claude/`, `~/.cursor/`, and wherever else, so you either duplicate installs or live with inconsistency. There's no standard place for agent rules and no clean way to compose behaviors from multiple sources.
-
-lore fixes this with a single `~/.agents/` directory. All tools point there.
-
----
+lore's answer is boring on purpose: one directory, `~/.agents/`, that every tool points at.
 
 ## Install
+
+Grab it with curl:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/<user>/lore/main/install.sh | bash
 ```
 
-Or from a clone:
+Or clone and run the installer yourself:
 
 ```bash
 git clone https://github.com/<user>/lore
 cd lore && ./install.sh
 ```
 
-Then bootstrap:
+Either way, bootstrap once when you're done:
 
 ```bash
 lore init
 ```
 
----
+## A quick taste
 
-## Quick start
+Say you've cloned a repo full of skills and behaviors. You install them from wherever they live:
 
 ```bash
-# Clone a skills repo and install from it
 git clone https://github.com/someone/ai-skills ~/repos/ai-skills
 
 cd ~/repos/ai-skills/skills
@@ -50,9 +47,11 @@ lore behavior add strict-review
 lore list
 ```
 
----
+That's the whole loop: `cd` into a repo, install what you want, check it with `list`.
 
-## How it works
+## How it actually works
+
+After `lore init`, your layout looks like this:
 
 ```
 ~/.agents/
@@ -65,57 +64,60 @@ lore list
 └── skills/            ← symlink → ~/.agents/skills/
 ```
 
-Skills and behaviors live in their source repos. lore creates symlinks pointing to them. Installed = symlink exists. Uninstalled = symlink removed. The source is never touched.
+The important part: your skills and behaviors never leave their source repos. lore just creates symlinks that point at them. A skill is "installed" when its symlink exists and "uninstalled" when you remove it — the original files are never moved or modified.
 
-When you run `lore behavior add`, the behavior's entry `.md` file gets appended to `~/.agents/AGENTS.md` as a Claude `@import`. Claude loads it on every session.
-
----
+Behaviors work the same way, with one extra step. When you run `lore behavior add`, lore finds the behavior's entry `.md` file and appends it to `~/.agents/AGENTS.md` as a Claude `@import`. From then on, Claude loads it at the start of every session.
 
 ## Commands
 
-| Command | Description |
+| Command | What it does |
 |---|---|
-| `lore init` | Bootstrap `~/.agents/` and wire Claude |
-| `lore install <skill> [...]` | Install skill(s) from current directory |
+| `lore init` | Bootstrap `~/.agents/` and wire up Claude |
+| `lore install <skill> [...]` | Install skill(s) from the current directory |
 | `lore remove <skill> [...]` | Uninstall skill(s) |
-| `lore behavior add <name> [...]` | Install behavior(s) + update `AGENTS.md` |
+| `lore behavior add <name> [...]` | Install behavior(s) and update `AGENTS.md` |
 | `lore behavior remove <name> [...]` | Remove behavior(s) |
-| `lore list` | Show all installed skills and behaviors |
-| `lore man` | Full manual |
+| `lore list` | Show everything that's installed |
+| `lore version` | Print the version |
+| `lore help` | Full manual |
 
-Full reference: [docs/reference.md](docs/reference.md)
+The full write-up of every command and file format lives in [docs/reference.md](docs/reference.md).
 
----
+## Already have a Claude setup?
 
-## Migrating from an existing Claude setup
+You don't have to clean anything up first. `lore init` notices an existing `~/.claude/CLAUDE.md` and migrates it for you:
 
-`lore init` detects an existing `~/.claude/CLAUDE.md` and handles it automatically:
+- Your old instructions move to `~/.agents/behaviors/from-claude/RULES.md`
+- Any skills sitting in `~/.claude/skills/` move into `~/.agents/skills/`
+- `~/.claude/CLAUDE.md` is replaced with a single `@import` pointing at your new config
 
-- Your old instructions are moved to `~/.agents/behaviors/from-claude/RULES.md`
-- Existing skills in `~/.claude/skills/` are moved to `~/.agents/skills/`
-- `~/.claude/CLAUDE.md` is replaced with a single `@import`
+Nothing gets thrown away, and lore prints exactly where each piece landed. If a skill name would collide with one you already have, lore stops before changing anything and tells you what to resolve — better a clear halt than a half-migrated mess. And if you ever delete `AGENTS.md` by accident, re-running `lore init` rebuilds it from the behaviors still on disk.
 
-Nothing is lost. lore tells you exactly where everything went.
+## Pointing lore somewhere else
 
----
-
-## Environment
-
-`AGENTS_DIR` overrides the base directory (default: `~/.agents`). Useful for testing:
+Two environment variables let you redirect where lore reads and writes. Set both and you can exercise the whole tool without going near your real config — handy for testing, or for running more than one Claude profile:
 
 ```bash
-AGENTS_DIR=/tmp/test-agents lore init
+AGENTS_DIR=/tmp/test/agents CLAUDE_DIR=/tmp/test/claude lore init
 ```
 
----
+`AGENTS_DIR` defaults to `~/.agents` and moves every derived path with it. `CLAUDE_DIR` defaults to `~/.claude`.
+
+## Tests
+
+There's a [bats](https://github.com/bats-core/bats-core) suite covering the CLI and the installer. It runs against throwaway temp directories, so it never touches your real setup:
+
+```bash
+brew install bats-core
+bats test/lore.bats
+bats test/install.bats
+```
 
 ## Roadmap
 
 - [ ] Multi-account Claude support (`~/.claude-<account>/` directories)
-- [ ] `lore update` — re-link skills after a repo has moved
-- [ ] Additional tool integrations (Cursor, Windsurf, Zed)
-
----
+- [ ] `lore update` — re-link skills after a repo moves on disk
+- [ ] Integrations for other tools (Cursor, Windsurf, Zed)
 
 ## License
 
