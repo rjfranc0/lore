@@ -270,9 +270,9 @@ cmd_list() {
   if [[ $found -eq 0 ]]; then echo "  (none)"; fi
 }
 
-# ── man ───────────────────────────────────────────────────────────────────────
+# ── help (full manual) ─────────────────────────────────────────────────────────
 
-cmd_man() {
+cmd_help() {
   local pager="${PAGER:-less}"
   command -v "$pager" > /dev/null 2>&1 || pager=cat
   "$pager" << 'MANEOF'
@@ -309,11 +309,17 @@ COMMANDS
                      Overwrites CLAUDE.md with the @import.
                      Logs where old instructions now live.
 
+              On a skill-name collision, init stops before writing
+              CLAUDE.md so config is never left half-wired. If
+              AGENTS.md is deleted, re-running rebuilds it and
+              re-registers behaviors still present on disk.
+
               Idempotent. Multi-account support: planned.
 
        install <skill> [...]
               Install one or more skills from the current directory.
               Creates: ~/.agents/skills/<skill> → $PWD/<skill>
+              A trailing slash from tab-completion is stripped.
 
               On duplicate, logs both paths:
                   ⚠  cooking-chef already installed
@@ -322,9 +328,11 @@ COMMANDS
 
        remove <skill> [...]
               Remove skill symlinks. Source dirs are never touched.
+              A trailing slash is stripped.
 
        behavior add <name> [...]
               Install behaviors from the current directory.
+              Requires 'lore init' to have run first.
 
               1.  Creates symlink:
                       ~/.agents/behaviors/<name> → $PWD/<name>
@@ -337,10 +345,13 @@ COMMANDS
                       @/absolute/path/to/entry.md
 
               Idempotent. Each step runs only if not already done.
+              A trailing slash on the name is stripped.
 
        behavior remove <name> [...]
               Removes the behavior symlink and its <!-- name --> + @path
-              block from AGENTS.md.
+              block from AGENTS.md. The name is matched exactly, so a
+              behavior like a.c never clobbers a sibling like axc. A
+              trailing slash is stripped.
 
               Built-in behaviors (e.g. from-claude) must be removed
               manually — lore will tell you exactly what to do.
@@ -353,9 +364,10 @@ COMMANDS
        version
               Print the lore version string.
 
-       man    Open this manual. Uses $PAGER, falls back to cat.
-
-       help   Print short usage summary.
+       help   Show this manual. Uses $PAGER, falls back to cat.
+              Running lore with no arguments prints a short usage
+              summary instead; an unknown command prints that summary
+              to stderr and exits 1.
 
 AGENTS.MD FORMAT
        The file is fully managed by lore. Do not edit it manually.
@@ -447,14 +459,15 @@ lore — Layered Orchestration for Rules and Extensions
   lore behavior remove <name> [...]   remove behavior(s)
   lore list                           show installed skills and behaviors
   lore version                        print version
-  lore man                            full manual
+  lore help                           full manual
 
   AGENTS_DIR   override base dir (default: ~/.agents)
   CLAUDE_DIR   override Claude config dir (default: ~/.claude)
 EOF
 }
 
-case "${1:-help}" in
+case "${1:-}" in
+  "")       _lore_help ;;
   init)     cmd_init ;;
   install)  shift; cmd_install "$@" ;;
   remove)   shift; cmd_remove "$@" ;;
@@ -466,7 +479,6 @@ case "${1:-help}" in
     esac ;;
   list)     cmd_list ;;
   version)  cmd_version ;;
-  man)      cmd_man ;;
-  help)     _lore_help ;;
+  help)     cmd_help ;;
   *)        _lore_help >&2; exit 1 ;;
 esac

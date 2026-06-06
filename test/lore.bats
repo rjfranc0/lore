@@ -7,6 +7,7 @@ setup() {
   HOME="$(mktemp -d)"
   export CLAUDE_DIR="$HOME/.claude"
   export AGENTS_DIR="$HOME/.agents"
+  export PAGER=cat
   mkdir -p "$CLAUDE_DIR"
   LORE="$BATS_TEST_DIRNAME/../lore"
 }
@@ -288,7 +289,22 @@ make_behavior() {  # make_behavior <base_dir> <name> [entry=RULES.md]
   [ "$status" -eq 1 ]
 }
 
-@test "help exits 0" {
+@test "help exits 0 and prints the full manual" {
   run "$LORE" help
   [ "$status" -eq 0 ]
+  [[ "$output" == *"LORE(1)"* ]]
+}
+
+@test "no args prints short summary and exits 0" {
+  run "$LORE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"lore — Layered Orchestration"* ]]
+  [[ "$output" != *"LORE(1)"* ]]
+}
+
+@test "man is no longer a command — exits 1 with short summary" {
+  run "$LORE" man
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"lore — Layered Orchestration"* ]]
+  [[ "$output" != *"LORE(1)"* ]]
 }
