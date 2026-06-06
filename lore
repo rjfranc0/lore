@@ -7,7 +7,7 @@ SKILLS_DIR="$AGENTS_DIR/skills"
 BEHAVIORS_DIR="$AGENTS_DIR/behaviors"
 AGENTS_MD="$AGENTS_DIR/AGENTS.md"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
-LORE_VERSION="0.1.0"
+LORE_VERSION="0.2.0"
 
 # ── utils ─────────────────────────────────────────────────────────────────────
 
