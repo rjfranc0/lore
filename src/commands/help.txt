@@ -1,0 +1,170 @@
+LORE(1)                      User Commands                      LORE(1)
+
+NAME
+       lore — local AI skill manager
+       LORE = Layered Orchestration for Rules and Extensions
+
+SYNOPSIS
+       lore <command> [args...]
+
+DESCRIPTION
+       lore manages ~/.agents/, a universal config directory for AI
+       agents. Skills and behaviors are installed as symlinks, keeping
+       source files in their repos and the config layer thin.
+
+       Skills are exposed to Claude via ~/.claude/skills → ~/.agents/skills.
+       Behaviors are listed in ~/.agents/AGENTS.md as @import lines.
+
+COMMANDS
+       init
+              Bootstrap ~/.agents/ and wire Claude. Handles two cases:
+
+              Case 1 — empty install:
+                     Creates AGENTS.md, skills/, and behaviors/.
+                     Writes @~/.agents/AGENTS.md into ~/.claude/CLAUDE.md.
+                     Symlinks ~/.claude/skills → ~/.agents/skills.
+
+              Case 2 — existing CLAUDE.md or skills/:
+                     Migrates CLAUDE.md content to
+                         ~/.agents/behaviors/from-claude/RULES.md
+                     Moves any real skills into ~/.agents/skills/.
+                     Overwrites CLAUDE.md with the @import.
+                     Logs where old instructions now live.
+
+              On a skill-name collision, init stops before writing
+              CLAUDE.md so config is never left half-wired. If
+              AGENTS.md is deleted, re-running rebuilds it and
+              re-registers behaviors still present on disk.
+
+              Idempotent. Multi-account support: planned.
+
+       install <skill> [...]
+              Install one or more skills from the current directory.
+              Creates: ~/.agents/skills/<skill> → $PWD/<skill>
+              A trailing slash from tab-completion is stripped.
+
+              On duplicate, logs both paths:
+                  ⚠  cooking-chef already installed
+                     existing  → /old/path
+                     attempted → /new/path
+
+       remove <skill> [...]
+              Remove skill symlinks. Source dirs are never touched.
+              A trailing slash is stripped.
+
+       behavior add <name> [...]
+              Install behaviors from the current directory.
+              Requires 'lore init' to have run first.
+
+              1.  Creates symlink:
+                      ~/.agents/behaviors/<name> → $PWD/<name>
+
+              2.  Locates entry .md (resolution order):
+                      RULES.md → BEHAVIOR.md → README.md → first .md
+
+              3.  Appends to AGENTS.md:
+                      <!-- name -->
+                      @/absolute/path/to/entry.md
+
+              Idempotent. Each step runs only if not already done.
+              A trailing slash on the name is stripped.
+
+       behavior remove <name> [...]
+              Removes the behavior symlink and its <!-- name --> + @path
+              block from AGENTS.md. The name is matched exactly, so a
+              behavior like a.c never clobbers a sibling like axc. A
+              trailing slash is stripped.
+
+              Built-in behaviors (e.g. from-claude) must be removed
+              manually — lore will tell you exactly what to do.
+
+       sync
+              Reconcile AGENTS.md against behaviors currently on disk.
+
+              Removes entries whose behavior directory no longer exists.
+              Adds entries for directories present on disk but not yet
+              registered. Leaves valid entries untouched.
+
+              Exits 0 in all cases, including when nothing changed.
+              Requires 'lore init' to have run first.
+
+       list
+              Print all installed skills and behaviors with symlink
+              targets. Flags broken symlinks with ✗ broken.
+              Built-in behaviors (e.g. from-claude) show as (built-in).
+
+       version
+              Print the lore version string.
+
+       help   Show this manual. Uses $PAGER, falls back to cat.
+              Running lore with no arguments prints a short usage
+              summary instead; an unknown command prints that summary
+              to stderr and exits 1.
+
+AGENTS.MD FORMAT
+       The file is fully managed by lore. Do not edit it manually.
+
+           <!-- managed by lore — do not edit -->
+           <!-- skills auto-loaded from ~/.agents/skills/ -->
+
+           <!-- from-claude -->
+           @/home/you/.agents/behaviors/from-claude/RULES.md
+
+           <!-- restaurant-rules -->
+           @/home/you/.agents/behaviors/restaurant-rules/RULES.md
+
+       Each behavior is a two-line block: a comment for identification
+       and an @path line that Claude imports. The comment is what lore
+       uses to find and remove the block.
+
+ENVIRONMENT
+       AGENTS_DIR
+              Override the base directory. Default: ~/.agents
+              All derived paths move with it.
+
+              AGENTS_DIR=/tmp/test-agents lore init
+
+       CLAUDE_DIR
+              Override the Claude config directory. Default: ~/.claude
+              Useful for testing and multi-account setups.
+
+              export HOME=/tmp/lore-smoke-$$
+              export CLAUDE_DIR=/tmp/lore-smoke-claude-$$
+              lore init
+
+FILES
+       ~/.agents/AGENTS.md          Universal agent instructions
+       ~/.agents/skills/            Skill symlinks
+       ~/.agents/behaviors/         Behavior symlinks + built-ins
+       ~/.claude/CLAUDE.md          Managed by lore: @import → AGENTS.md
+       ~/.claude/skills             Symlink → ~/.agents/skills
+
+EXAMPLES
+       Bootstrap:
+           lore init
+
+       Install skills from a cloned repo:
+           cd ~/repos/ai-restaurant/skills
+           lore install cooking-chef dishwasher
+
+       Add a behavior:
+           cd ~/repos/ai-restaurant/behaviors
+           lore behavior add restaurant-rules
+
+       Remove a behavior (cleans AGENTS.md too):
+           lore behavior remove restaurant-rules
+
+       List with status:
+           lore list
+
+       Dry-run against a temp dir:
+           AGENTS_DIR=/tmp/test-agents lore init
+
+NOTES
+       Uninstalling is non-destructive — only symlinks are removed,
+       source files in repos are never touched.
+
+       Multi-account Claude support (multiple ~/.claude-<account>/
+       directories) is planned for a future release.
+
+LORE(1)                      User Commands                      LORE(1)
