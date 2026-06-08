@@ -30,13 +30,13 @@ pub fn run() -> Result<()> {
         for entry in entries {
             let path = entry.path();
             if !path.is_dir() { continue; }
-            if let Ok(ep) = behavior_entry(&path) {
-                if !md.contains_path(&ep) {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    output::ok(&format!("Added {name} to AGENTS.md"));
-                    md.add(name, ep);
-                    added += 1;
-                }
+            if let Ok(ep) = behavior_entry(&path)
+                && !md.contains_path(&ep)
+            {
+                let name = entry.file_name().to_string_lossy().to_string();
+                output::ok(&format!("Added {name} to AGENTS.md"));
+                md.add(name, ep);
+                added += 1;
             }
         }
     }

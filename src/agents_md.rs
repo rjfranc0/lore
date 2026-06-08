@@ -45,15 +45,14 @@ impl AgentsMd {
 
         // Parse blocks
         while let Some(line) = lines.next() {
-            if let Some(name) = parse_block_comment(line) {
-                if let Some(at_line) = lines.next() {
-                    if let Some(path_str) = at_line.strip_prefix('@') {
-                        behaviors.push(BehaviorBlock {
-                            name: name.to_string(),
-                            path: PathBuf::from(path_str),
-                        });
-                    }
-                }
+            if let Some(name) = parse_block_comment(line)
+                && let Some(at_line) = lines.next()
+                && let Some(path_str) = at_line.strip_prefix('@')
+            {
+                behaviors.push(BehaviorBlock {
+                    name: name.to_string(),
+                    path: PathBuf::from(path_str),
+                });
             }
         }
 
