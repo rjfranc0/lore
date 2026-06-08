@@ -73,7 +73,7 @@ Every behavior entry is exactly this:
 @/absolute/path/to/entry.md
 ```
 
-The comment is the lookup key for removal (`sed /<!-- name -->/,+1d`).
+The comment is the lookup key for removal (`AgentsMd::remove_by_name`).
 The `@path` is what Claude imports. Always absolute paths.
 
 ## Testing without touching real config
@@ -98,4 +98,4 @@ cat /tmp/lore-test/AGENTS.md
   is not finalized. This is a breaking surface — design carefully before touching init.
 - **`lore update`**: re-link skills after a repo has moved on disk.
 - **Additional tool integrations**: Cursor, Windsurf, Zed — each needs its own wiring
-  in `cmd_init`, modeled after the Claude integration.
+  in `commands/init.rs`, modeled after the Claude integration.

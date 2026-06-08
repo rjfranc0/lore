@@ -12,17 +12,23 @@ lore's answer is boring on purpose: one directory, `~/.agents/`, that every tool
 
 ## Install
 
-Grab it with curl:
+Grab the latest stable binary:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<user>/lore/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rjfranc0/lore/main/install.sh | bash
 ```
 
-Or clone and run the installer yourself:
+Or clone and let the installer build from source (requires `cargo`):
 
 ```bash
-git clone https://github.com/<user>/lore
+git clone https://github.com/rjfranc0/lore
 cd lore && ./install.sh
+```
+
+To install the latest pre-release from the dev channel:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rjfranc0/lore/main/install.sh | bash -s -- --dev
 ```
 
 Either way, bootstrap once when you're done:
@@ -106,13 +112,13 @@ AGENTS_DIR=/tmp/test/agents CLAUDE_DIR=/tmp/test/claude lore init
 
 ## Tests
 
-There's a [bats](https://github.com/bats-core/bats-core) suite covering the CLI and the installer. It runs against throwaway temp directories, so it never touches your real setup:
+The test suite uses `cargo test` — no extra tooling required:
 
 ```bash
-brew install bats-core
-bats test/lore.bats
-bats test/install.bats
+cargo test
 ```
+
+Tests run against throwaway temp directories, so they never touch your real setup.
 
 ## Roadmap
 
