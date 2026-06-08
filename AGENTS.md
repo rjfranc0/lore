@@ -2,17 +2,27 @@
 
 ## What this is
 
-lore is a single bash script (~250 lines) that manages AI agent skills and behaviors
-via symlinks. One universal config dir at `~/.agents/`, Claude wired via `~/.claude/`.
-
-No external dependencies. No build step. No package manager.
+lore is a Rust CLI that manages AI agent skills and behaviors via symlinks.
+One universal config dir at `~/.agents/`, Claude wired via `~/.claude/`.
 
 ## Repo structure
 
 ```
 lore/
-├── lore              ← the CLI (single file, this is the whole product)
+├── src/              ← Rust source
+│   ├── lib.rs
+│   ├── main.rs
+│   ├── cli.rs
+│   ├── output.rs
+│   ├── paths.rs
+│   ├── symlink.rs
+│   ├── agents_md.rs
+│   └── commands/
+├── tests/integration/
+├── .githooks/        ← local git hooks (opt-in)
+├── .github/workflows/
 ├── install.sh        ← installs lore to ~/.local/bin
+├── Cargo.toml
 ├── README.md
 ├── AGENTS.md         ← you are here
 ├── CLAUDE.md         ← @AGENTS.md
@@ -20,24 +30,30 @@ lore/
     └── reference.md  ← full command and format reference
 ```
 
+## Local setup
+
+After cloning, activate the pre-push hook to run `cargo test + clippy` before each push:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This is opt-in — the hook is not forced on contributors.
+
 ## Architecture
 
 Everything reduces to three operations:
 
 1. **Symlink management** — create/remove links in `~/.agents/skills/` or `~/.agents/behaviors/`
-2. **AGENTS.md edits** — append or delete `<!-- name -->\n@path` blocks
+2. **AGENTS.md edits** — `AgentsMd` struct parses, mutates, and re-serializes the file
 3. **Claude wiring** — write `@AGENTS_MD` to `~/.claude/CLAUDE.md`, symlink `~/.claude/skills`
 
 ## Coding conventions
 
-- Bash only. POSIX-ish. Deps: `find`, `sed`, `ln`, `readlink` — all standard.
-- `set -euo pipefail` at the top, always.
-- `sedi()` for every `sed -i` call — handles BSD (macOS) vs GNU (Linux) flag difference.
-- `shopt -s nullglob` / `shopt -u nullglob` around globs that might match nothing.
-- Never use `((count++))` — `set -e` treats `((0))` as failure. Use `count=$((count + 1))`.
-- `if [[ ... ]]; then` not `[[ ... ]] && command` — cleaner with `set -e`.
-- Command functions: `cmd_*`. Utils: lowercase, no prefix.
-- Output: `ok()` for success, `warn()` for non-fatal issues, `die()` to exit, `note()` for indented sub-info.
+- Rust. Deps: `clap` (derive), `anyhow`, `dirs`. Dev: `assert_cmd`, `tempfile`, `predicates`.
+- All commands return `anyhow::Result<()>`. Dispatch in `lib.rs::run()`.
+- Command functions in `src/commands/`. Utils in `src/`.
+- Output: `ok()` for success, `warn()` for non-fatal issues, `note()` for indented sub-info.
 
 ## Key invariants — do not break
 

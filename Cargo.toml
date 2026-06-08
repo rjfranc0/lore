@@ -4,6 +4,8 @@ version = "0.2.0"
 edition = "2024"
 description = "Layered Orchestration for Rules and Extensions"
 license = "MIT"
+repository = "https://github.com/rjfranc0/lore"
+homepage = "https://github.com/rjfranc0/lore"
 
 [[bin]]
 name = "lore"

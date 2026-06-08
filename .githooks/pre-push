@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "→ pre-push: cargo test"
+cargo test --quiet
+echo "→ pre-push: cargo clippy"
+cargo clippy --quiet -- -D warnings
