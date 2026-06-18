@@ -16,23 +16,6 @@ fn list_shows_registered_accounts() {
 }
 
 #[test]
-fn list_shows_none_before_init() {
-    // Env::new() seeds the config with `default` already pointing at claude_dir,
-    // so "before init" isn't observable via `accounts list` — assert the
-    // post-init registration shows up instead (the pre-seed itself is covered
-    // by other tests relying on it for sandboxed `lore init` resolution).
-    let env = Env::new();
-    env.lore().arg("init").assert().success();
-
-    env.lore()
-        .arg("accounts")
-        .arg("list")
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("(none)").not());
-}
-
-#[test]
 fn list_shows_none_when_accounts_empty() {
     let env = Env::bare();
 
@@ -231,6 +214,19 @@ fn init_account_registers_in_config() {
     let config = std::fs::read_to_string(&env.config_path).unwrap();
     assert!(config.contains("work"));
     assert!(config.contains(&env.home.path().join(".claude-work").display().to_string()));
+}
+
+#[test]
+fn init_account_default_is_alias_for_implicit_default() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.lore().arg("init").arg("--account").arg("default").assert().success();
+
+    // Must stay a single registry entry pointing at the original implicit
+    // default path — never a second, untracked `~/.claude-default/`.
+    let config = std::fs::read_to_string(&env.config_path).unwrap();
+    assert_eq!(config.lines().filter(|l| l.starts_with("default = ")).count(), 1);
+    assert!(!env.home.path().join(".claude-default").exists());
 }
 
 #[test]
