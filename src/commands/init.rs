@@ -30,20 +30,24 @@ pub fn run(account: Option<String>) -> Result<()> {
     let p = Paths::from_config(&config);
 
     let account_name = account.clone().unwrap_or_else(|| "default".to_string());
-    let claude_dir = match &account {
-        Some(name) => dirs::home_dir()
-            .expect("cannot determine home directory")
-            .join(format!(".claude-{name}")),
-        None => config.account_path("default").unwrap_or_else(|| {
+    let claude_dir = if account_name == "default" {
+        // Explicit `--account default` is a no-op alias for omitting the flag —
+        // both must resolve through the same registry entry, never a second,
+        // untracked `~/.claude-default/`.
+        config.account_path("default").unwrap_or_else(|| {
             dirs::home_dir().expect("cannot determine home directory").join(".claude")
-        }),
+        })
+    } else {
+        dirs::home_dir()
+            .expect("cannot determine home directory")
+            .join(format!(".claude-{account_name}"))
     };
 
     std::fs::create_dir_all(&p.skills_dir)?;
     std::fs::create_dir_all(&p.behaviors_dir)?;
 
-    let claude_md = claude_dir.join("CLAUDE.md");
-    let claude_skills = claude_dir.join("skills");
+    let claude_md = wire::claude_md_path(&claude_dir);
+    let claude_skills = wire::claude_skills_path(&claude_dir);
 
     // ── AGENTS.MD ─────────────────────────────────────────────────────────────
 
