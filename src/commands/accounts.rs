@@ -43,9 +43,12 @@ pub fn sync() -> Result<()> {
     let mut rewired = 0usize;
     for (name, path) in &config.accounts {
         let claude_dir = std::path::PathBuf::from(path);
-        let claude_md = claude_dir.join("CLAUDE.md");
-        let claude_skills = claude_dir.join("skills");
+        let claude_md = wire::claude_md_path(&claude_dir);
+        let claude_skills = wire::claude_skills_path(&claude_dir);
 
+        // A read failure here (permission denied, non-UTF8) is folded into "not
+        // wired" deliberately — sync is self-healing, so any unreadable state
+        // routes through the same rewire path below rather than needing its own branch.
         let already_wired = claude_md.exists()
             && std::fs::read_to_string(&claude_md)
                 .is_ok_and(|content| content.contains(&format!("@{}", p.agents_md.display())))
