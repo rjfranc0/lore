@@ -1,6 +1,7 @@
 pub mod agents_md;
 pub mod cli;
 pub mod commands;
+pub mod config;
 pub mod output;
 pub mod paths;
 pub mod symlink;
