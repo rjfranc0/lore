@@ -40,6 +40,22 @@ git config core.hooksPath .githooks
 
 This is opt-in — the hook is not forced on contributors.
 
+## Release process
+
+`release-please` watches `main` (stable) and `dev` (beta pre-release) and parses
+the **squash-merge commit subject** of every merge — not the individual commits
+inside the PR. That subject must be a conventional commit (`feat:`, `fix:`,
+`chore:`, `refactor:`, etc.) or release-please silently finds nothing to release.
+
+- When merging a PR into `main` or `dev`, set the squash-merge commit title to a
+  conventional commit message — GitHub defaults to the PR title, so title PRs
+  accordingly.
+- Tags are plain `v<version>` (`include-component-in-tag: false` in
+  `release-please-config.json`) — this must keep matching the `v*` trigger in
+  `.github/workflows/release.yml`.
+- To pin a specific version on a release PR (e.g. bootstrapping the first
+  release), add a `Release-As: X.Y.Z` footer to the triggering commit.
+
 ## Architecture
 
 Everything reduces to three operations:
