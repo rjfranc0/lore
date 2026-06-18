@@ -16,7 +16,7 @@ DESCRIPTION
        Behaviors are listed in ~/.agents/AGENTS.md as @import lines.
 
 COMMANDS
-       init
+       init [--account <name>]
               Bootstrap ~/.agents/ and wire Claude. Handles two cases:
 
               Case 1 — empty install:
@@ -36,7 +36,29 @@ COMMANDS
               AGENTS.md is deleted, re-running rebuilds it and
               re-registers behaviors still present on disk.
 
-              Idempotent. Multi-account support: planned.
+              --account <name>
+                     Wires ~/.claude-<name>/ instead of ~/.claude/ and
+                     registers <name> in the accounts registry. Name
+                     must be alphanumeric/hyphens only — anything else
+                     is rejected before any disk operation.
+
+              Idempotent. Registers the account ("default" when no
+              --account flag is given) in ~/.config/lore/lore.toml.
+
+       accounts list
+              Print the accounts registry: name and wired path.
+
+       accounts remove <name>
+              Remove an account from the registry only. Nothing on
+              disk is touched — not ~/.claude-<name>/, not CLAUDE.md,
+              not the skills symlink. Removing "default" is allowed,
+              with a warning.
+
+       accounts sync
+              Re-wire any registered account whose wiring is broken
+              on disk (missing CLAUDE.md, or a missing/dead skills
+              symlink). Reports each action, or that accounts are
+              already in sync.
 
        install <skill> [...]
               Install one or more skills from the current directory.
@@ -118,26 +140,23 @@ AGENTS.MD FORMAT
        uses to find and remove the block.
 
 ENVIRONMENT
-       AGENTS_DIR
-              Override the base directory. Default: ~/.agents
-              All derived paths move with it.
+       LORE_CONF
+              Override the config file path. Default:
+                  ~/.config/lore/lore.toml
 
-              AGENTS_DIR=/tmp/test-agents lore init
+              The config file holds agents_dir and the accounts
+              registry — see FILES below.
 
-       CLAUDE_DIR
-              Override the Claude config directory. Default: ~/.claude
-              Useful for testing and multi-account setups.
-
-              export HOME=/tmp/lore-smoke-$$
-              export CLAUDE_DIR=/tmp/lore-smoke-claude-$$
-              lore init
+              LORE_CONF=/tmp/test-lore.toml lore init
 
 FILES
+       ~/.config/lore/lore.toml     lore config: agents_dir + accounts registry
        ~/.agents/AGENTS.md          Universal agent instructions
        ~/.agents/skills/            Skill symlinks
        ~/.agents/behaviors/         Behavior symlinks + built-ins
        ~/.claude/CLAUDE.md          Managed by lore: @import → AGENTS.md
        ~/.claude/skills             Symlink → ~/.agents/skills
+       ~/.claude-<name>/            Per-account Claude dir (--account <name>)
 
 EXAMPLES
        Bootstrap:
@@ -157,14 +176,19 @@ EXAMPLES
        List with status:
            lore list
 
-       Dry-run against a temp dir:
-           AGENTS_DIR=/tmp/test-agents lore init
+       Dry-run against a temp config:
+           LORE_CONF=/tmp/test-lore.toml lore init
+
+       Multi-account:
+           lore init --account work
+           lore accounts list
+           lore accounts sync
 
 NOTES
        Uninstalling is non-destructive — only symlinks are removed,
        source files in repos are never touched.
 
-       Multi-account Claude support (multiple ~/.claude-<account>/
-       directories) is planned for a future release.
+       accounts remove is registry-only too — it never touches
+       ~/.claude-<name>/ on disk.
 
 LORE(1)                      User Commands                      LORE(1)
