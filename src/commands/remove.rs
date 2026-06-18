@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::{output, paths::Paths, symlink};
 
 pub fn run(skills: Vec<String>) -> Result<()> {
-    let p = Paths::resolve();
+    let p = Paths::load()?;
 
     for raw in skills {
         let name = raw.trim_end_matches('/');

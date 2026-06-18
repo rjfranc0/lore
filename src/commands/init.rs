@@ -1,20 +1,49 @@
 use anyhow::Result;
-use crate::{agents_md::{AgentsMd, behavior_entry}, output, paths::Paths, symlink};
+
+use crate::{
+    agents_md::{AgentsMd, behavior_entry},
+    config::LoreConfig,
+    output,
+    paths::Paths,
+    symlink, wire,
+};
 
 const AGENTS_MD_HEADER: &str = "\
 <!-- managed by lore — do not edit -->
 <!-- skills auto-loaded from ~/.agents/skills/ -->
 ";
 
-pub fn run() -> Result<()> {
-    let p = Paths::resolve();
+pub fn run(account: Option<String>) -> Result<()> {
+    if let Some(name) = &account {
+        if name.is_empty() {
+            anyhow::bail!("invalid account name: must not be empty");
+        }
+        if let Some(bad) = name.chars().find(|c| !c.is_ascii_alphanumeric() && *c != '-') {
+            anyhow::bail!(
+                "invalid account name '{name}': only alphanumeric characters and hyphens are allowed (found '{bad}')"
+            );
+        }
+    }
+
+    let config_path = LoreConfig::config_path();
+    let mut config = LoreConfig::load_or_default(&config_path)?;
+    let p = Paths::from_config(&config);
+
+    let account_name = account.clone().unwrap_or_else(|| "default".to_string());
+    let claude_dir = match &account {
+        Some(name) => dirs::home_dir()
+            .expect("cannot determine home directory")
+            .join(format!(".claude-{name}")),
+        None => config.account_path("default").unwrap_or_else(|| {
+            dirs::home_dir().expect("cannot determine home directory").join(".claude")
+        }),
+    };
 
     std::fs::create_dir_all(&p.skills_dir)?;
     std::fs::create_dir_all(&p.behaviors_dir)?;
-    std::fs::create_dir_all(&p.claude_dir)?;
 
-    let claude_md = p.claude_dir.join("CLAUDE.md");
-    let claude_skills = p.claude_dir.join("skills");
+    let claude_md = claude_dir.join("CLAUDE.md");
+    let claude_skills = claude_dir.join("skills");
 
     // ── AGENTS.MD ─────────────────────────────────────────────────────────────
 
@@ -84,7 +113,11 @@ pub fn run() -> Result<()> {
             let name = entry.file_name();
             let dst = p.skills_dir.join(&name);
             if dst.exists() || symlink::is_link(&dst) {
-                output::warn(&format!("Skill '{}' already exists in {} — skipping", name.to_string_lossy(), p.skills_dir.display()));
+                output::warn(&format!(
+                    "Skill '{}' already exists in {} — skipping",
+                    name.to_string_lossy(),
+                    p.skills_dir.display()
+                ));
                 collision = true;
             } else {
                 std::fs::rename(entry.path(), &dst)?;
@@ -109,14 +142,15 @@ pub fn run() -> Result<()> {
 
     // ── Wire Claude ───────────────────────────────────────────────────────────
 
-    std::fs::write(&claude_md, format!("@{}\n", p.agents_md.display()))?;
-    output::ok(&format!("Wrote {}", claude_md.display()));
+    wire::wire_claude_dir(&p.agents_md, &p.skills_dir, &claude_dir)?;
 
-    if symlink::is_link(&claude_skills) {
-        std::fs::remove_file(&claude_skills)?;
+    // ── Register account ─────────────────────────────────────────────────────
+
+    if !config.accounts.contains_key(&account_name) {
+        config.accounts.insert(account_name.clone(), claude_dir.to_string_lossy().into_owned());
+        config.save(&config_path)?;
+        output::ok(&format!("Registered account: {account_name}"));
     }
-    symlink::create(&p.skills_dir, &claude_skills)?;
-    output::ok(&format!("Linked {}/skills → {}", p.claude_dir.display(), p.skills_dir.display()));
 
     Ok(())
 }

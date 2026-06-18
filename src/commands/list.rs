@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::{paths::Paths, symlink};
 
 pub fn run() -> Result<()> {
-    let p = Paths::resolve();
+    let p = Paths::load()?;
 
     println!("Skills:");
     let mut found = false;

@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod behavior;
 pub mod help;
 pub mod init;

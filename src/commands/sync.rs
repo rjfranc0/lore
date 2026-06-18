@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::{agents_md::{AgentsMd, behavior_entry}, output, paths::Paths};
 
 pub fn run() -> Result<()> {
-    let p = Paths::resolve();
+    let p = Paths::load()?;
     if !p.agents_md.exists() {
         anyhow::bail!("Run 'lore init' first");
     }

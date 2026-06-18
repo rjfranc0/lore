@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::{agents_md::{AgentsMd, behavior_entry}, output, paths::Paths, symlink};
 
 pub fn add(names: Vec<String>) -> Result<()> {
-    let p = Paths::resolve();
+    let p = Paths::load()?;
     if !p.agents_md.exists() {
         anyhow::bail!("Run 'lore init' first");
     }
@@ -37,7 +37,7 @@ pub fn add(names: Vec<String>) -> Result<()> {
 }
 
 pub fn remove(names: Vec<String>) -> Result<()> {
-    let p = Paths::resolve();
+    let p = Paths::load()?;
 
     for raw in names {
         let name = raw.trim_end_matches('/').to_string();

@@ -9,7 +9,7 @@ pub mod wire;
 
 use std::process::ExitCode;
 use clap::Parser;
-use cli::{Cli, Command, BehaviorAction};
+use cli::{AccountsAction, BehaviorAction, Cli, Command};
 
 pub fn run() -> ExitCode {
     let cli = match Cli::try_parse() {
@@ -41,7 +41,7 @@ pub fn run() -> ExitCode {
             commands::help::run();
             return ExitCode::SUCCESS;
         }
-        Some(Command::Init)                  => commands::init::run(),
+        Some(Command::Init { account })       => commands::init::run(account),
         Some(Command::Install { skills })    => commands::install::run(skills),
         Some(Command::Remove  { skills })    => commands::remove::run(skills),
         Some(Command::Sync)                  => commands::sync::run(),
@@ -49,6 +49,11 @@ pub fn run() -> ExitCode {
         Some(Command::Behavior { action }) => match action {
             BehaviorAction::Add    { names } => commands::behavior::add(names),
             BehaviorAction::Remove { names } => commands::behavior::remove(names),
+        },
+        Some(Command::Accounts { action }) => match action {
+            AccountsAction::List            => commands::accounts::list(),
+            AccountsAction::Remove { name } => commands::accounts::remove(name),
+            AccountsAction::Sync            => commands::accounts::sync(),
         },
     };
 
@@ -63,16 +68,18 @@ pub fn run() -> ExitCode {
 
 const SHORT_HELP: &str = r#"lore — Layered Orchestration for Rules and Extensions
 
-  lore init                           bootstrap ~/.agents + Claude integration
+  lore init [--account <name>]        bootstrap ~/.agents + Claude integration
   lore install <skill> [...]          install skill(s) from current directory
   lore remove  <skill> [...]          uninstall skill(s)
   lore behavior add    <name> [...]   add behavior(s) from current directory
   lore behavior remove <name> [...]   remove behavior(s)
+  lore accounts list                  show registered accounts
+  lore accounts remove <name>         remove an account from the registry
+  lore accounts sync                  re-wire accounts broken on disk
   lore sync                           reconcile AGENTS.md from disk
   lore list                           show installed skills and behaviors
   lore version                        print version
   lore help                           full manual
 
-  AGENTS_DIR   override base dir (default: ~/.agents)
-  CLAUDE_DIR   override Claude config dir (default: ~/.claude)
+  LORE_CONF   override config file path (default: ~/.config/lore/lore.toml)
 "#;
