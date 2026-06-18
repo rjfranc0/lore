@@ -5,6 +5,7 @@ pub mod config;
 pub mod output;
 pub mod paths;
 pub mod symlink;
+pub mod wire;
 
 use std::process::ExitCode;
 use clap::Parser;
