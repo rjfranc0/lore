@@ -88,7 +88,7 @@ Behaviors work the same way, with one extra step. When you run `lore behavior ad
 | `lore version` | Print the version |
 | `lore help` | Full manual |
 
-The full write-up of every command and file format lives in [docs/reference.md](docs/reference.md).
+The full write-up of every command and file format lives in [docs/index.md](docs/index.md).
 
 ## Already have a Claude setup?
 

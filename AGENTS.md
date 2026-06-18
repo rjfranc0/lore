@@ -28,8 +28,7 @@ lore/
 ├── README.md
 ├── AGENTS.md         ← you are here
 ├── CLAUDE.md         ← @AGENTS.md
-└── docs/
-    └── reference.md  ← full command and format reference
+└── docs/             ← corpus-generated reference (see docs/index.md)
 ```
 
 ## Local setup
