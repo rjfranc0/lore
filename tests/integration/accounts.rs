@@ -75,6 +75,61 @@ fn sync_rewires_broken_skills_symlink() {
 }
 
 #[test]
+fn sync_rewires_skills_path_replaced_by_real_directory() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.lore().arg("init").arg("--account").arg("work").assert().success();
+
+    let work_skills = env.home.path().join(".claude-work/skills");
+    assert!(work_skills.is_symlink());
+    std::fs::remove_file(&work_skills).unwrap();
+    std::fs::create_dir(&work_skills).unwrap();
+    assert!(work_skills.is_dir() && !work_skills.is_symlink());
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    assert!(work_skills.is_symlink());
+}
+
+#[test]
+fn sync_rewires_claude_md_replaced_by_real_directory() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.lore().arg("init").arg("--account").arg("work").assert().success();
+
+    let work_md = env.home.path().join(".claude-work/CLAUDE.md");
+    assert!(work_md.is_file());
+    std::fs::remove_file(&work_md).unwrap();
+    std::fs::create_dir(&work_md).unwrap();
+    assert!(work_md.is_dir());
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    assert!(work_md.is_file());
+}
+
+#[test]
+fn sync_rewires_claude_md_replaced_by_symlink_to_elsewhere() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.lore().arg("init").arg("--account").arg("work").assert().success();
+
+    let work_md = env.home.path().join(".claude-work/CLAUDE.md");
+    let decoy = env.home.path().join("decoy.txt");
+    std::fs::write(&decoy, "decoy content\n").unwrap();
+    std::fs::remove_file(&work_md).unwrap();
+    std::os::unix::fs::symlink(&decoy, &work_md).unwrap();
+    assert!(work_md.is_symlink());
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    assert!(!work_md.is_symlink(), "CLAUDE.md should be a real file, not a symlink");
+    let content = std::fs::read_to_string(&work_md).unwrap();
+    assert!(content.starts_with('@'));
+    assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "decoy content\n");
+}
+
+#[test]
 fn sync_rewires_multiple_broken_accounts() {
     let env = Env::new();
     env.lore().arg("init").arg("--account").arg("work").assert().success();

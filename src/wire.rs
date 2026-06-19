@@ -18,11 +18,20 @@ pub fn wire_claude_dir(agents_md: &Path, skills_dir: &Path, claude_dir: &Path) -
     std::fs::create_dir_all(claude_dir)?;
 
     let claude_md = claude_md_path(claude_dir);
+    if symlink::is_link(&claude_md) {
+        std::fs::remove_file(&claude_md)?;
+    } else if claude_md.is_dir() {
+        std::fs::remove_dir_all(&claude_md)?;
+    }
     std::fs::write(&claude_md, format!("@{}\n", agents_md.display()))?;
     output::ok(&format!("Wrote {}", claude_md.display()));
 
     let claude_skills = claude_skills_path(claude_dir);
     if symlink::is_link(&claude_skills) {
+        std::fs::remove_file(&claude_skills)?;
+    } else if claude_skills.is_dir() {
+        std::fs::remove_dir_all(&claude_skills)?;
+    } else if claude_skills.exists() {
         std::fs::remove_file(&claude_skills)?;
     }
     symlink::create(skills_dir, &claude_skills)?;
