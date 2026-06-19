@@ -15,9 +15,11 @@ lore/
 │   ├── cli.rs
 │   ├── output.rs
 │   ├── paths.rs
+│   ├── config.rs
+│   ├── wire.rs
 │   ├── symlink.rs
 │   ├── agents_md.rs
-│   └── commands/
+│   └── commands/     ← includes accounts.rs
 ├── tests/integration/
 ├── .githooks/        ← local git hooks (opt-in)
 ├── .github/workflows/
@@ -26,8 +28,7 @@ lore/
 ├── README.md
 ├── AGENTS.md         ← you are here
 ├── CLAUDE.md         ← @AGENTS.md
-└── docs/
-    └── reference.md  ← full command and format reference
+└── docs/             ← corpus-generated reference (see docs/index.md)
 ```
 
 ## Local setup
@@ -66,10 +67,12 @@ Everything reduces to three operations:
 
 ## Coding conventions
 
-- Rust. Deps: `clap` (derive), `anyhow`, `dirs`. Dev: `assert_cmd`, `tempfile`, `predicates`.
+- Rust. Deps: `clap` (derive), `anyhow`, `dirs`, `serde` (derive), `toml`. Dev: `assert_cmd`, `tempfile`, `predicates`.
 - All commands return `anyhow::Result<()>`. Dispatch in `lib.rs::run()`.
 - Command functions in `src/commands/`. Utils in `src/`.
 - Output: `ok()` for success, `warn()` for non-fatal issues, `note()` for indented sub-info.
+- Config lives at `~/.config/lore/lore.toml` (override path: `LORE_CONF` env var — the
+  only env var lore reads). Holds `agents_dir` and the `[accounts]` registry.
 
 ## Key invariants — do not break
 
@@ -79,6 +82,10 @@ Everything reduces to three operations:
 4. AGENTS.md block format is exactly two lines: `<!-- name -->` then `@/absolute/path`
 5. `init` case 2 must never lose existing CLAUDE.md content — always migrates to `from-claude`
 6. Broken symlinks must appear in `lore list` (use `/*` glob, not `*/`)
+7. Config is always read via `LoreConfig::load_or_default` — never hand-roll a TOML read
+8. `Paths` is agents-only — no `claude_dir` field; per-account Claude dirs are resolved
+   in `commands/init.rs`/`commands/accounts.rs` from the config's accounts registry
+9. `accounts remove` only ever touches the registry — never disk (`~/.claude-<name>/`)
 
 ## AGENTS.md block format
 
@@ -95,23 +102,22 @@ The `@path` is what Claude imports. Always absolute paths.
 ## Testing without touching real config
 
 ```bash
-AGENTS_DIR=/tmp/lore-test lore init
+echo 'agents_dir = "/tmp/lore-test/agents"' > /tmp/lore-test.toml
+export LORE_CONF=/tmp/lore-test.toml
+lore init
 
 mkdir -p /tmp/fake/skills/my-skill && touch /tmp/fake/skills/my-skill/SKILL.md
-cd /tmp/fake/skills && AGENTS_DIR=/tmp/lore-test lore install my-skill
+cd /tmp/fake/skills && lore install my-skill
 
 mkdir -p /tmp/fake/behaviors/my-rules && touch /tmp/fake/behaviors/my-rules/RULES.md
-cd /tmp/fake/behaviors && AGENTS_DIR=/tmp/lore-test lore behavior add my-rules
+cd /tmp/fake/behaviors && lore behavior add my-rules
 
-AGENTS_DIR=/tmp/lore-test lore list
-cat /tmp/lore-test/AGENTS.md
+lore list
+cat /tmp/lore-test/agents/AGENTS.md
 ```
 
 ## Planned work
 
-- **Multi-account support**: Claude supports `~/.claude-<account>/` dirs. The design
-  (one base `~/.agents/` + per-account overrides, or fully independent instances)
-  is not finalized. This is a breaking surface — design carefully before touching init.
 - **`lore update`**: re-link skills after a repo has moved on disk.
 - **Additional tool integrations**: Cursor, Windsurf, Zed — each needs its own wiring
   in `commands/init.rs`, modeled after the Claude integration.

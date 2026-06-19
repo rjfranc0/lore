@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::{output, paths::Paths, symlink};
 
 pub fn run(skills: Vec<String>) -> Result<()> {
-    let p = Paths::resolve();
+    let p = Paths::load()?;
     let cwd = std::env::current_dir()?;
 
     for raw in skills {

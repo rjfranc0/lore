@@ -5,6 +5,7 @@ pub struct Env {
     pub home: TempDir,
     pub agents_dir: PathBuf,
     pub claude_dir: PathBuf,
+    pub config_path: PathBuf,
 }
 
 impl Env {
@@ -12,15 +13,42 @@ impl Env {
         let home = tempfile::tempdir().unwrap();
         let agents_dir = home.path().join(".agents");
         let claude_dir = home.path().join(".claude");
+        let config_dir = home.path().join(".config/lore");
         std::fs::create_dir_all(&claude_dir).unwrap();
-        Self { home, agents_dir, claude_dir }
+        std::fs::create_dir_all(&config_dir).unwrap();
+
+        let config_path = config_dir.join("lore.toml");
+        std::fs::write(
+            &config_path,
+            format!(
+                "agents_dir = \"{}\"\n\n[accounts]\ndefault = \"{}\"\n",
+                agents_dir.display(),
+                claude_dir.display(),
+            ),
+        )
+        .unwrap();
+
+        Self { home, agents_dir, claude_dir, config_path }
+    }
+
+    /// Like `new()`, but skips writing `lore.toml` — for tests proving true
+    /// first-run bootstrap behavior (no config file on disk at all yet).
+    pub fn bare() -> Self {
+        let home = tempfile::tempdir().unwrap();
+        let agents_dir = home.path().join(".agents");
+        let claude_dir = home.path().join(".claude");
+        let config_path = home.path().join(".config/lore/lore.toml");
+
+        Self { home, agents_dir, claude_dir, config_path }
     }
 
     pub fn lore(&self) -> assert_cmd::Command {
         let mut cmd = assert_cmd::Command::cargo_bin("lore").unwrap();
-        cmd.env("AGENTS_DIR", &self.agents_dir)
-           .env("CLAUDE_DIR", &self.claude_dir)
-           .env("PAGER", "cat");
+        // `--account` resolution falls back to `dirs::home_dir()`, which reads $HOME —
+        // sandbox it too, or named-account tests collide on the real home directory.
+        cmd.env("HOME", self.home.path())
+            .env("LORE_CONF", &self.config_path)
+            .env("PAGER", "cat");
         cmd
     }
 

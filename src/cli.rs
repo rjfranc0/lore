@@ -10,7 +10,10 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Bootstrap ~/.agents/ and wire Claude integration
-    Init,
+    Init {
+        #[arg(long)]
+        account: Option<String>,
+    },
     /// Install skill(s) from the current directory
     Install {
         #[arg(required = true)]
@@ -25,6 +28,11 @@ pub enum Command {
     Behavior {
         #[command(subcommand)]
         action: BehaviorAction,
+    },
+    /// Manage Claude accounts
+    Accounts {
+        #[command(subcommand)]
+        action: AccountsAction,
     },
     /// Reconcile AGENTS.md from disk
     Sync,
@@ -48,4 +56,17 @@ pub enum BehaviorAction {
         #[arg(required = true)]
         names: Vec<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum AccountsAction {
+    /// List registered accounts
+    List,
+    /// Remove an account from the registry (registry only — no disk changes)
+    Remove {
+        #[arg(required = true)]
+        name: String,
+    },
+    /// Re-wire any registered account that's broken on disk
+    Sync,
 }

@@ -17,6 +17,19 @@ fn creates_expected_structure() {
 }
 
 #[test]
+fn first_run_creates_config_with_default_account() {
+    let env = Env::bare();
+    assert!(!env.config_path.exists());
+
+    env.lore().arg("init").assert().success();
+
+    assert!(env.config_path.is_file());
+    let config = fs::read_to_string(&env.config_path).unwrap();
+    assert!(config.contains(&format!("agents_dir = \"{}\"", env.agents_dir.display())));
+    assert!(config.lines().any(|l| l == format!("default = \"{}\"", env.claude_dir.display())));
+}
+
+#[test]
 fn is_idempotent() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
