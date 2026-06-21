@@ -13,7 +13,11 @@ fn creates_expected_structure() {
     assert!(env.claude_skills().is_symlink());
 
     let claude_md = fs::read_to_string(env.claude_md()).unwrap();
-    assert!(claude_md.contains(&format!("@{}", env.agents_md().display())));
+    assert!(claude_md.contains(&format!("@{}", env.lore_md().display())));
+
+    assert!(env.lore_md().is_file());
+    let lore_md = fs::read_to_string(env.lore_md()).unwrap();
+    assert!(lore_md.contains(&format!("@{}", env.agents_md().display())));
 }
 
 #[test]
@@ -33,8 +37,41 @@ fn first_run_creates_config_with_default_account() {
 fn is_idempotent() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
+    let claude_md_before = fs::read_to_string(env.claude_md()).unwrap();
+    let lore_md_before = fs::read_to_string(env.lore_md()).unwrap();
+
     env.lore().arg("init").assert().success();
+
     assert!(env.claude_skills().is_symlink());
+    assert_eq!(claude_md_before, fs::read_to_string(env.claude_md()).unwrap());
+    assert_eq!(lore_md_before, fs::read_to_string(env.lore_md()).unwrap());
+}
+
+#[test]
+fn writes_fresh_lore_md_import_when_claude_md_is_empty() {
+    let env = Env::new();
+    fs::write(env.claude_md(), "").unwrap();
+
+    env.lore().arg("init").assert().success();
+
+    let claude_md = fs::read_to_string(env.claude_md()).unwrap();
+    assert_eq!(claude_md, format!("@{}\n", env.lore_md().display()));
+}
+
+#[test]
+fn lore_md_preserves_existing_behavior_blocks_on_reinit() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+
+    let mut lore_md = fs::read_to_string(env.lore_md()).unwrap();
+    lore_md.push_str("\n<!-- my-rules -->\n@/somewhere/RULES.md\n");
+    fs::write(env.lore_md(), &lore_md).unwrap();
+
+    env.lore().arg("init").assert().success();
+
+    let lore_md = fs::read_to_string(env.lore_md()).unwrap();
+    assert!(lore_md.contains("<!-- my-rules -->"));
+    assert!(lore_md.contains(&format!("@{}", env.agents_md().display())));
 }
 
 #[test]
@@ -48,10 +85,46 @@ fn migrates_existing_claude_md() {
     assert!(fs::read_to_string(&rules).unwrap().contains("old rules"));
 
     let claude_md = fs::read_to_string(env.claude_md()).unwrap();
-    assert!(claude_md.contains(&format!("@{}", env.agents_md().display())));
+    assert!(claude_md.contains(&format!("@{}", env.lore_md().display())));
+    assert!(claude_md.contains("old rules"));
+    assert!(claude_md.contains("be nice"));
 
     let agents_md = fs::read_to_string(env.agents_md()).unwrap();
     assert!(agents_md.contains("from-claude"));
+}
+
+#[test]
+fn replaces_legacy_direct_agents_md_import_with_lore_md() {
+    let env = Env::new();
+    fs::create_dir_all(&env.agents_dir).unwrap();
+    fs::write(env.agents_md(), "<!-- managed by lore -->\n").unwrap();
+    fs::write(env.claude_md(), format!("@{}\n", env.agents_md().display())).unwrap();
+    assert!(!env.lore_md().exists());
+
+    env.lore().arg("init").assert().success();
+
+    let claude_md = fs::read_to_string(env.claude_md()).unwrap();
+    assert_eq!(claude_md, format!("@{}\n", env.lore_md().display()));
+
+    assert!(env.lore_md().is_file());
+    let lore_md = fs::read_to_string(env.lore_md()).unwrap();
+    assert!(lore_md.contains(&format!("@{}", env.agents_md().display())));
+}
+
+#[test]
+fn migration_warning_lists_foreign_import_lines_and_leaves_them() {
+    let env = Env::new();
+    fs::write(env.claude_md(), "@some/other/tool/import.md\n\n# My notes\nbe nice\n").unwrap();
+
+    env.lore()
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("@some/other/tool/import.md"));
+
+    let claude_md = fs::read_to_string(env.claude_md()).unwrap();
+    assert!(claude_md.contains("@some/other/tool/import.md"));
+    assert!(claude_md.contains("be nice"));
 }
 
 #[test]

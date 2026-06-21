@@ -71,27 +71,82 @@ re-derives them.
 Claude config directory, and the only place that actually writes one.
 
 ```rust
-pub fn claude_md_path(claude_dir: &Path) -> PathBuf      // claude_dir.join("CLAUDE.md")
-pub fn claude_skills_path(claude_dir: &Path) -> PathBuf   // claude_dir.join("skills")
-pub fn wire_claude_dir(agents_md: &Path, skills_dir: &Path, claude_dir: &Path) -> Result<()>
+pub fn claude_md_path(claude_dir: &Path) -> PathBuf       // claude_dir.join("CLAUDE.md")
+pub fn lore_md_path(claude_dir: &Path) -> PathBuf          // claude_dir.join("LORE.md")
+pub fn claude_skills_path(claude_dir: &Path) -> PathBuf    // claude_dir.join("skills")
+
+pub fn wire_lore_md(agents_md: &Path, claude_dir: &Path) -> Result<PathBuf>
+pub fn wire_claude_md(claude_dir: &Path, agents_md: &Path,
+                       migration_behaviors_dir: &Path, migration_register_md: &Path) -> Result<()>
+pub fn wire_claude_skills(skills_dir: &Path, claude_dir: &Path) -> Result<()>
+pub fn wire_claude_dir(agents_md: &Path, skills_dir: &Path, claude_dir: &Path,
+                        migration_behaviors_dir: &Path, migration_register_md: &Path) -> Result<()>
 ```
 
-`wire_claude_dir`'s steps, in order: `create_dir_all(claude_dir)` → write
-`CLAUDE.md` with `@{agents_md}\n` → if a skills symlink already exists,
-remove it → create a fresh symlink `claude_dir/skills → skills_dir`. Always
-rewrites both, even if only one half was actually broken — idempotent and
-cheap enough (local file I/O, on-demand only) that the codebase accepts the
-small redundancy rather than detecting which half needs fixing.
+**`LORE.md` is lore's fully-owned intermediary** between the universal
+`AGENTS.md` and the shared, partly user-owned `CLAUDE.md`. `wire_lore_md`
+reuses the `AgentsMd` struct as-is (its header + named-block format is
+byte-identical to what `LORE.md` needs) — loads the existing file if
+present, **unconditionally overwrites just the header** to
+`@{agents_md}\n`, and saves. The unconditional overwrite is what makes it
+idempotent without a separate "is it already correct" branch — nothing
+foreign can ever land in `LORE.md`'s header, so there's nothing to
+preserve there. `md.behaviors` (any blocks added by a prior
+`behavior add --account`-style registration) is left untouched.
 
-**`claude_md_path`/`claude_skills_path` exist as the single source of truth
-for that join** — every caller that needs to know where a Claude account's
-`CLAUDE.md` or skills symlink lives (`init.rs`, `accounts::sync`, and
-`wire_claude_dir` itself) calls through these two functions rather than
-independently writing `claude_dir.join("CLAUDE.md")`. This was a deliberate
-de-duplication: the layout rule used to be computed in three places
-independently, which is a correctness risk (three places to keep in sync,
-not just three lines to keep short) — see "What breaks if this is
-touched," below.
+**`wire_claude_md` never fully overwrites `CLAUDE.md`.** It normalizes the
+path first (a symlink or directory sitting where CLAUDE.md should be is
+removed, exactly as the old `wire_claude_dir` did), reads whatever content
+remains (`None` if absent), then applies this priority order — order
+matters, each case returns before the next is checked:
+
+1. A line already equals (trimmed) `@{lore_md}` → already wired, no-op.
+2. A line already equals (trimmed) `@{agents_md}` (the legacy pre-LORE.md
+   direct import) → that one line is replaced with `@{lore_md}`, nothing
+   else in the file is touched.
+3. Content exists and is non-empty after trimming → migrate (see below).
+4. Otherwise (absent, or present but empty) → the entire file becomes
+   `@{lore_md}\n`.
+
+**Migration** (private `migrate_claude_md`) copies the *original* content
+verbatim into `migration_behaviors_dir/from-claude/RULES.md`, registers a
+`from-claude` block into `migration_register_md` (guarded by
+`contains_name` so a retry never double-registers), then appends
+`@{lore_md}` to that same original content and writes the result back —
+the old text is never deleted, only added to. It also reports every line
+in the original content that (trimmed) starts with `@`: those belong to
+other tools that already write their own lines into `CLAUDE.md`, and are
+named in the migration warning specifically so the user knows lore saw
+them and left them alone.
+
+**`migration_behaviors_dir`/`migration_register_md` are caller-supplied,
+not derived here** — `wire_claude_md` doesn't know or care which account
+it's wiring. For the default account the caller passes the shared
+`~/.agents/behaviors/` and `~/.agents/AGENTS.md`; for a named account it
+passes that account's own `<claude_dir>/behaviors/` and that account's own
+`LORE.md` — see `commands/init.rs` below for where that split happens.
+
+`wire_claude_skills` is the skills-symlink half, unchanged from before this
+file split it out of `wire_claude_dir`: clear whatever currently sits at
+`claude_dir/skills` (symlink, directory, or plain file) and create a fresh
+symlink to `skills_dir`.
+
+`wire_claude_dir` is the orchestrator, in a fixed order:
+`create_dir_all(claude_dir)` → `wire_lore_md` → `wire_claude_md` →
+`wire_claude_skills`. The order is load-bearing: `LORE.md` must exist
+before `wire_claude_md` runs, because cases 1/2/4 above all write a line
+that names it, and a Case-3 migration for a named account also registers
+into that same freshly-ensured `LORE.md`.
+
+**`claude_md_path`/`lore_md_path`/`claude_skills_path` exist as the single
+source of truth for those joins** — every caller that needs to know where
+a Claude account's `CLAUDE.md`, `LORE.md`, or skills symlink lives
+(`init.rs`, `accounts::sync`, and `wire.rs` itself) calls through these
+three functions rather than independently writing `claude_dir.join(...)`.
+This was a deliberate de-duplication: the layout rule used to be computed
+in multiple places independently, which is a correctness risk (multiple
+places to keep in sync, not just lines to keep short) — see "What breaks
+if this is touched," below.
 
 ## Module: `commands/init.rs`
 
@@ -125,11 +180,25 @@ explicitly while already registered elsewhere. See
 [@/functional/accounts.md#decisions] for why unification was chosen over
 rejecting the collision outright.
 
-**Migration** (`should_migrate`): true only when `claude_md` exists, has
-non-empty content, **and** that content does not already contain lore's own
-`@{agents_md}` import line. This three-part check is what prevents a
-second `init` run from re-triggering Case 2 against lore's own
-previously-written `CLAUDE.md`.
+**AGENTS.md creation is fully decoupled from CLAUDE.md's state.** Before
+the `LORE.md` indirection, an internal `should_migrate` check gated
+AGENTS.md's Case-1-vs-Case-2 split on whatever was sitting in CLAUDE.md,
+which meant migration only ever fired once — for whichever account
+happened to run `init` first. That check is gone: `if
+!p.agents_md.exists()` now unconditionally creates AGENTS.md fresh
+(re-registering any behaviors already on disk, the recovery path) with no
+branch on CLAUDE.md at all. CLAUDE.md handling is entirely
+`wire_claude_md`'s job now (see `wire.rs` above), invoked via
+`wire_claude_dir` on *every* `init` run, for *every* account — not a
+one-time thing gated on AGENTS.md's absence.
+
+**Migration target**: just before that `wire_claude_dir` call, `init.rs`
+picks which behaviors-dir/register-file pair migrated content should land
+in, keyed on `account_name == "default"`: the shared `p.behaviors_dir` /
+`p.agents_md` for the default account, or that account's own
+`<claude_dir>/behaviors` / `wire::lore_md_path(&claude_dir)` for a named
+one. This split is what keeps a named account's migrated instructions from
+ever touching the shared `AGENTS.md`.
 
 **Skill migration collision**: while moving real (non-symlinked) skill
 directories out of `claude_skills` into `skills_dir`, any name that already
@@ -164,23 +233,35 @@ not error) for an unregistered name or for `"default"` specifically, but
 performs the removal either way for `"default"` (the warning is
 informational, not a refusal).
 
-**`sync`** — for each registered account, the wiring check is:
+**`sync`** — for each registered account, the wiring check now verifies
+*two* hops instead of one: CLAUDE.md must import LORE.md, **and** LORE.md
+must import AGENTS.md, in addition to the unchanged skills-symlink checks:
 ```rust
 let already_wired = claude_md.exists()
-    && std::fs::read_to_string(&claude_md).is_ok_and(|c| c.contains(&format!("@{}", agents_md.display())))
+    && std::fs::read_to_string(&claude_md)
+        .is_ok_and(|c| c.lines().any(|l| l.trim() == format!("@{}", lore_md.display())))
+    && lore_md.exists()
+    && std::fs::read_to_string(&lore_md)
+        .is_ok_and(|c| c.lines().any(|l| l.trim() == format!("@{}", agents_md.display())))
     && symlink::is_link(&claude_skills)
     && symlink::is_live(&claude_skills);
 ```
-**A `CLAUDE.md` read failure (permission denied, non-UTF-8 content) folds
-into `false` via `is_ok_and`** — treated identically to "wrong content,"
-not surfaced as a distinct error. This is deliberate: `sync`'s whole
-purpose is self-healing, so routing every form of "not correct" through the
-same `wire_claude_dir` rewrite path (rather than carving out a separate
-branch for unreadable-but-possibly-fixable files) keeps the function's
-logic to one path instead of two. If `wire_claude_dir` itself then fails
-(e.g. genuine permission denial on write), that error still propagates
-normally — only the *read* used for the "is it already correct" check is
+**A read failure on either file (permission denied, non-UTF-8 content)
+folds into `false` via `is_ok_and`** — treated identically to "wrong
+content," not surfaced as a distinct error. This is deliberate, for the
+same reason as before the two-hop check was added: `sync`'s whole purpose
+is self-healing, so routing every form of "not correct" through the same
+`wire_claude_dir` rewrite path (rather than carving out a separate branch
+for unreadable-but-possibly-fixable files) keeps the function's logic to
+one path instead of two. If `wire_claude_dir` itself then fails (e.g.
+genuine permission denial on write), that error still propagates normally
+— only the *read* used for the "is it already correct" check is
 swallowed, not the *write* used to fix it.
+
+If not already wired, `sync` computes the same migration-target tuple
+`init.rs` does (keyed on `name == "default"`) before calling
+`wire_claude_dir` — a rewire triggered by `sync` goes through the exact
+same surgical CLAUDE.md handling `init` does, never a separate code path.
 
 ## What breaks if this is touched
 
@@ -195,3 +276,7 @@ swallowed, not the *write* used to fix it.
 - `LoreConfig::save`'s parent-dir creation means removing it from
   `config.rs` would break `init`'s account-registration step today, since
   that call site relies on it rather than creating the directory itself.
+- Calling `wire_claude_md` before `wire_lore_md` inside `wire_claude_dir`
+  breaks every case that writes a `@{lore_md}` line — `LORE.md` wouldn't
+  exist yet at the path being named, and a Case-3 migration for a named
+  account would have nothing to register into.

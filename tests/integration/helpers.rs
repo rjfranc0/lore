@@ -60,6 +60,10 @@ impl Env {
         self.claude_dir.join("CLAUDE.md")
     }
 
+    pub fn lore_md(&self) -> PathBuf {
+        self.claude_dir.join("LORE.md")
+    }
+
     pub fn claude_skills(&self) -> PathBuf {
         self.claude_dir.join("skills")
     }
