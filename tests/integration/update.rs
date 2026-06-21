@@ -216,6 +216,78 @@ fn all_relinks_valid_answer_and_skips_blank_answer() {
 }
 
 #[test]
+fn all_continues_to_next_candidate_after_agents_md_sync_warning() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+
+    let behavior_a_src = home(&env).join("behavior-a-src");
+    make_behavior(&behavior_a_src, "behavior-a", "RULES.md");
+    env.lore()
+        .arg("behavior")
+        .arg("add")
+        .arg("behavior-a")
+        .current_dir(&behavior_a_src)
+        .assert()
+        .success();
+
+    let behavior_b_src = home(&env).join("behavior-b-src");
+    make_behavior(&behavior_b_src, "behavior-b", "RULES.md");
+    env.lore()
+        .arg("behavior")
+        .arg("add")
+        .arg("behavior-b")
+        .current_dir(&behavior_b_src)
+        .assert()
+        .success();
+
+    fs::remove_dir_all(&behavior_a_src).unwrap();
+    fs::remove_dir_all(&behavior_b_src).unwrap();
+
+    // `find_broken`'s read_dir order within behaviors_dir isn't guaranteed, so
+    // these answers are positional, not tied to a specific behavior name:
+    // whichever is prompted first gets a location with no resolvable .md
+    // entry (triggers a bookkeeping warning); whichever is prompted second
+    // gets a normal, valid new location.
+    let empty_dir = home(&env).join("empty-new-location");
+    fs::create_dir_all(&empty_dir).unwrap();
+
+    let valid_dir = home(&env).join("valid-new-location");
+    fs::create_dir_all(&valid_dir).unwrap();
+    fs::write(valid_dir.join("RULES.md"), "rules\n").unwrap();
+
+    env.lore()
+        .arg("update")
+        .arg("--all")
+        .write_stdin(format!(
+            "{}\n{}\n",
+            empty_dir.display(),
+            valid_dir.display()
+        ))
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Could not update AGENTS.md entry for",
+        ));
+
+    // Both behaviors must have been relinked — one to the no-entry location
+    // (with a warning), the other to the valid one — proving the scan
+    // continued past the first candidate's bookkeeping failure instead of
+    // aborting and leaving the second one unprompted and still broken.
+    let target_a = fs::read_link(env.agents_dir.join("behaviors/behavior-a")).unwrap();
+    let target_b = fs::read_link(env.agents_dir.join("behaviors/behavior-b")).unwrap();
+    let targets = [&target_a, &target_b];
+
+    assert!(
+        targets.contains(&&empty_dir),
+        "one candidate must relink to the no-entry location"
+    );
+    assert!(
+        targets.contains(&&valid_dir),
+        "the other candidate must relink to the valid location"
+    );
+}
+
+#[test]
 fn all_reports_nothing_broken() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
