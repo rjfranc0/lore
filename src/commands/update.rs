@@ -49,8 +49,9 @@ fn update_one(p: &Paths, cwd: &Path, name: &str, path: Option<String>) -> Result
     output::ok(&format!("Relinked {name} → {}", src.display()));
 
     if kind == Kind::Behavior {
-        let mut md = AgentsMd::load(&p.agents_md)?;
-        sync_behavior_entry(&mut md, &p.agents_md, name, &dst)?;
+        let result = AgentsMd::load(&p.agents_md)
+            .and_then(|mut md| sync_behavior_entry(&mut md, &p.agents_md, name, &dst));
+        warn_on_sync_failure(name, result);
     }
 
     Ok(())
@@ -74,7 +75,22 @@ fn update_all(p: &Paths) -> Result<()> {
         return Ok(());
     }
 
-    let mut md = AgentsMd::load(&p.agents_md)?;
+    let needs_agents_md = candidates
+        .iter()
+        .any(|(_, _, _, kind)| *kind == Kind::Behavior);
+    let mut md = if needs_agents_md {
+        match AgentsMd::load(&p.agents_md) {
+            Ok(md) => Some(md),
+            Err(e) => {
+                output::warn(&format!(
+                    "Could not load AGENTS.md, behavior entries will not be updated: {e}"
+                ));
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     for (name, dst, old_target, kind) in candidates {
         println!("{name} → {} (broken)", old_target.display());
@@ -84,10 +100,16 @@ fn update_all(p: &Paths) -> Result<()> {
         let mut buf = String::new();
         io::stdin().lock().read_line(&mut buf)?;
 
-        relink_candidate(&name, &dst, &buf, kind, &mut md, &p.agents_md)?;
+        relink_candidate(&name, &dst, &buf, kind, md.as_mut(), &p.agents_md)?;
     }
 
     Ok(())
+}
+
+fn warn_on_sync_failure(name: &str, result: Result<()>) {
+    if let Err(e) = result {
+        output::warn(&format!("Could not update AGENTS.md entry for {name}: {e}"));
+    }
 }
 
 /// Applies one `--all` prompt response: blank skips, a non-directory warns and skips,
@@ -98,7 +120,7 @@ fn relink_candidate(
     dst: &Path,
     input: &str,
     kind: Kind,
-    md: &mut AgentsMd,
+    md: Option<&mut AgentsMd>,
     agents_md_path: &Path,
 ) -> Result<()> {
     let trimmed = input.trim();
@@ -119,8 +141,8 @@ fn relink_candidate(
     relink(&src, dst)?;
     output::ok(&format!("Relinked {name} → {}", src.display()));
 
-    if kind == Kind::Behavior {
-        sync_behavior_entry(md, agents_md_path, name, dst)?;
+    if let (Kind::Behavior, Some(md)) = (kind, md) {
+        warn_on_sync_failure(name, sync_behavior_entry(md, agents_md_path, name, dst));
     }
 
     Ok(())
@@ -333,6 +355,36 @@ mod tests {
     }
 
     #[test]
+    fn update_one_warns_but_succeeds_when_behavior_entry_unresolvable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = test_paths(&tmp);
+        std::fs::create_dir_all(&p.behaviors_dir).unwrap();
+
+        let old_src = tmp.path().join("old-src");
+        std::fs::create_dir_all(&old_src).unwrap();
+        std::fs::write(old_src.join("RULES.md"), "hi").unwrap();
+        symlink::create(&old_src, &p.behaviors_dir.join("my-behavior")).unwrap();
+
+        let mut md = AgentsMd::parse("<!-- managed by lore -->\n");
+        md.add("my-behavior".to_string(), old_src.join("RULES.md"));
+        md.save(&p.agents_md).unwrap();
+
+        // New location has no resolvable .md entry at all.
+        let cwd = tmp.path().join("cwd");
+        let new_src = cwd.join("my-behavior");
+        std::fs::create_dir_all(&new_src).unwrap();
+
+        let result = update_one(&p, &cwd, "my-behavior", None);
+        assert!(
+            result.is_ok(),
+            "a bookkeeping failure must not undo a successful relink"
+        );
+
+        let resolved = std::fs::read_link(p.behaviors_dir.join("my-behavior")).unwrap();
+        assert_eq!(resolved, new_src);
+    }
+
+    #[test]
     fn relink_candidate_skips_on_blank_input() {
         let tmp = tempfile::tempdir().unwrap();
         let dst = tmp.path().join("dangling-link");
@@ -346,7 +398,7 @@ mod tests {
             &dst,
             "\n",
             Kind::Skill,
-            &mut md,
+            Some(&mut md),
             &agents_md_path,
         )
         .unwrap();
@@ -372,12 +424,62 @@ mod tests {
             &dst,
             &not_a_dir.to_string_lossy(),
             Kind::Skill,
-            &mut md,
+            Some(&mut md),
             &agents_md_path,
         )
         .unwrap();
 
         assert!(symlink::is_link(&dst));
         assert!(!symlink::is_live(&dst));
+    }
+
+    #[test]
+    fn relink_candidate_warns_but_succeeds_when_behavior_entry_unresolvable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path().join("dangling-link");
+        symlink::create(&tmp.path().join("does-not-exist"), &dst).unwrap();
+
+        let new_src = tmp.path().join("new-src-no-md");
+        std::fs::create_dir_all(&new_src).unwrap();
+
+        let mut md = AgentsMd::parse("<!-- managed by lore -->\n");
+        let agents_md_path = tmp.path().join("AGENTS.md");
+
+        let result = relink_candidate(
+            "my-behavior",
+            &dst,
+            &new_src.to_string_lossy(),
+            Kind::Behavior,
+            Some(&mut md),
+            &agents_md_path,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(std::fs::read_link(&dst).unwrap(), new_src);
+    }
+
+    #[test]
+    fn relink_candidate_continues_for_behavior_when_agents_md_unavailable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path().join("dangling-link");
+        symlink::create(&tmp.path().join("does-not-exist"), &dst).unwrap();
+
+        let new_src = tmp.path().join("new-src");
+        std::fs::create_dir_all(&new_src).unwrap();
+        std::fs::write(new_src.join("RULES.md"), "hi").unwrap();
+
+        let agents_md_path = tmp.path().join("AGENTS.md");
+
+        let result = relink_candidate(
+            "my-behavior",
+            &dst,
+            &new_src.to_string_lossy(),
+            Kind::Behavior,
+            None,
+            &agents_md_path,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(std::fs::read_link(&dst).unwrap(), new_src);
     }
 }
