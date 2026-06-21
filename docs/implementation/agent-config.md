@@ -96,11 +96,16 @@ prefixing.
 
 ## Commands built on these primitives
 
-`commands/install.rs`, `remove.rs`, `behavior.rs`, `list.rs`, `sync.rs` all
-start with `Paths::load()` (see
+`commands/install.rs`, `remove.rs`, `behavior.rs`, `list.rs`, `sync.rs`,
+`update.rs` all start with `Paths::load()` (see
 [@/implementation/accounts.md#module-pathsrs] — `Paths` is owned by the
 config layer, not this one, since it has to know about `LoreConfig` to
-resolve `agents_dir`). From there:
+resolve `agents_dir`) — `update.rs` differs only in shape, not substance:
+its core logic (`update_one`/`update_all`) takes `&Paths` and the resolved
+`cwd` as plain parameters instead of calling `Paths::load()`/
+`std::env::current_dir()` internally, so it stays unit-testable against a
+`tempfile::tempdir()`-backed `Paths` with no real cwd or env dependency;
+only the thin `run()` wrapper touches that I/O. From there:
 
 - **install/remove** (skills): thin wrappers directly over
   `symlink::create`/`is_link` plus a trailing-slash strip
@@ -120,6 +125,18 @@ resolve `agents_dir`). From there:
 - **list**: reads both `skills_dir` and `behaviors_dir`, sorted by
   filename, printing target + liveness for symlinks or a
   `(migrated)`/`(built-in)` tag for real directories.
+- **update**: `locate` checks `skills_dir` before `behaviors_dir` for a
+  given name. Relinking is unconditional — it never checks current link
+  health first, just removes any existing symlink and recreates it (the
+  same force semantics apply whether the old link was broken or healthy).
+  For a behavior, `sync_behavior_entry` re-runs `behavior_entry` against
+  the new target and rewrites the `AGENTS.md` block only if the resolved
+  filename actually changed. `--all` finds broken candidates with the same
+  `is_link && !is_live` predicate `list` uses to flag `✗ broken`, but
+  unlike `list` does not sort them — prompt order follows
+  `std::fs::read_dir`'s unspecified order within each directory (skills
+  are always prompted before behaviors; order within either kind is not
+  guaranteed).
 
 ## What breaks if this is touched
 
@@ -131,3 +148,7 @@ resolve `agents_dir`). From there:
 - Removing the `is_link`/`is_live` distinction (e.g. "simplifying" to one
   check) silently changes what `list` and `accounts sync` consider broken
   vs. absent.
+- Sorting `update --all`'s broken-candidate list (e.g. to match `list`'s
+  sorted output) would change prompt order for anyone with multiple broken
+  entries of the same kind — a behavior change for users mid-recovery, not
+  just an internal cleanup.

@@ -23,6 +23,7 @@ pub enum Command {
     Behavior { action: BehaviorAction },
     Accounts { action: AccountsAction },
     Sync,
+    Update { name: Option<String>, all: bool, path: Option<String> },
     List,
     Version,
     Help,
@@ -95,6 +96,13 @@ generated from the other:
 > `SHORT_HELP`, `help.txt`, *and* `cli.rs` by hand — confirmed by reading
 > all three, not stated anywhere as a rule. A change to one without the
 > other two is a silent doc-drift bug, not a compile error.
+
+**Confirmed instance**: the `update` subcommand updated `SHORT_HELP` (see
+[@/functional/agent-config.md#feature-update]) but not `help.txt` —
+`lore help` does not mention `update` anywhere (COMMANDS, FILES, or
+EXAMPLES) as of this writing. This is a product gap, not just a doc one;
+`docs/` cannot fix it, since `help.txt` is the source of truth it would be
+documenting.
 
 ## What breaks if this is touched
 
