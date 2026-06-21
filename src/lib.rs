@@ -43,6 +43,7 @@ pub fn run() -> ExitCode {
         Some(Command::Install { skills }) => commands::install::run(skills),
         Some(Command::Remove { skills }) => commands::remove::run(skills),
         Some(Command::Sync) => commands::sync::run(),
+        Some(Command::Update { name, all, path }) => commands::update::run(name, all, path),
         Some(Command::List) => commands::list::run(),
         Some(Command::Behavior { action }) => match action {
             BehaviorAction::Add { names } => commands::behavior::add(names),
@@ -75,6 +76,8 @@ const SHORT_HELP: &str = r#"lore — Layered Orchestration for Rules and Extensi
   lore accounts remove <name>         remove an account from the registry
   lore accounts sync                  re-wire accounts broken on disk
   lore sync                           reconcile AGENTS.md from disk
+  lore update <name> [--path <path>]  re-link a skill/behavior from a new path
+  lore update --all                   scan for broken symlinks and relink interactively
   lore list                           show installed skills and behaviors
   lore version                        print version
   lore help                           full manual

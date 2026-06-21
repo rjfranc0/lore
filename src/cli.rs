@@ -41,6 +41,14 @@ pub enum Command {
     },
     /// Reconcile AGENTS.md from disk
     Sync,
+    /// Re-link a skill or behavior whose source has moved
+    Update {
+        name: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        path: Option<String>,
+    },
     /// Show installed skills and behaviors
     List,
     /// Print the version
