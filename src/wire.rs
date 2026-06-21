@@ -127,19 +127,50 @@ fn migrate_claude_md(
     Ok(())
 }
 
-/// Re-links `claude_dir/skills` to `skills_dir`, replacing whatever sits there.
+/// Ensures `claude_dir/skills` is a real directory holding a re-link for every
+/// entry in `skills_dir`. Removes a stale single-symlink (the legacy model)
+/// first, but never wipes the directory afterward — account-specific symlinks
+/// already present must survive every call. Idempotent: existing re-links and
+/// account-specific symlinks are left untouched.
 pub fn wire_claude_skills(skills_dir: &Path, claude_dir: &Path) -> Result<()> {
     let claude_skills = claude_skills_path(claude_dir);
     if symlink::is_link(&claude_skills) {
         std::fs::remove_file(&claude_skills)?;
-    } else if claude_skills.is_dir() {
-        std::fs::remove_dir_all(&claude_skills)?;
-    } else if claude_skills.exists() {
-        std::fs::remove_file(&claude_skills)?;
     }
-    symlink::create(skills_dir, &claude_skills)?;
-    output::ok(&format!("Linked {}/skills → {}", claude_dir.display(), skills_dir.display()));
+    std::fs::create_dir_all(&claude_skills)?;
 
+    if skills_dir.is_dir() {
+        for entry in std::fs::read_dir(skills_dir)? {
+            let entry = entry?;
+            relink_skill(skills_dir, claude_dir, &entry.file_name().to_string_lossy())?;
+        }
+    }
+
+    output::ok(&format!("Linked {}/skills → {}", claude_dir.display(), skills_dir.display()));
+    Ok(())
+}
+
+/// Re-links one shared skill (`skills_dir/<name>`) into `claude_dir/skills/<name>`.
+/// Create-if-absent: skips silently when a link already exists there, so a
+/// caller can call this per-skill (`install`) or in a loop over all shared
+/// skills (`wire_claude_skills`) without ever overwriting an existing link.
+pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<()> {
+    let claude_skills = claude_skills_path(claude_dir);
+    std::fs::create_dir_all(&claude_skills)?;
+    let link = claude_skills.join(name);
+    if !symlink::is_link(&link) {
+        symlink::create(&skills_dir.join(name), &link)?;
+    }
+    Ok(())
+}
+
+/// Removes the re-link (or any symlink) for `name` from `claude_dir/skills`,
+/// if present. Silent no-op when absent.
+pub fn unlink_account_skill(claude_dir: &Path, name: &str) -> Result<()> {
+    let link = claude_skills_path(claude_dir).join(name);
+    if symlink::is_link(&link) {
+        std::fs::remove_file(&link)?;
+    }
     Ok(())
 }
 

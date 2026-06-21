@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     agents_md::{AgentsMd, behavior_entry},
-    config::LoreConfig,
+    config::{self, LoreConfig},
     output,
     paths::Paths,
     symlink, wire,
@@ -15,14 +15,7 @@ const AGENTS_MD_HEADER: &str = "\
 
 pub fn run(account: Option<String>) -> Result<()> {
     if let Some(name) = &account {
-        if name.is_empty() {
-            anyhow::bail!("invalid account name: must not be empty");
-        }
-        if let Some(bad) = name.chars().find(|c| !c.is_ascii_alphanumeric() && *c != '-') {
-            anyhow::bail!(
-                "invalid account name '{name}': only alphanumeric characters and hyphens are allowed (found '{bad}')"
-            );
-        }
+        config::validate_account_name(name)?;
     }
 
     let config_path = LoreConfig::config_path();
@@ -83,6 +76,9 @@ pub fn run(account: Option<String>) -> Result<()> {
 
         for entry in std::fs::read_dir(&claude_skills)? {
             let entry = entry?;
+            if symlink::is_link(&entry.path()) {
+                continue;
+            }
             let name = entry.file_name();
             let dst = p.skills_dir.join(&name);
             if dst.exists() || symlink::is_link(&dst) {
@@ -103,9 +99,7 @@ pub fn run(account: Option<String>) -> Result<()> {
         }
 
         // Try to remove the now-empty dir
-        let _ = std::fs::remove_dir(&claude_skills);
-
-        if collision && claude_skills.exists() && !symlink::is_link(&claude_skills) {
+        if collision {
             anyhow::bail!(
                 "{} still has unresolved skill collisions (see warnings above).\nResolve conflicts manually, then re-run: lore init",
                 claude_skills.display()

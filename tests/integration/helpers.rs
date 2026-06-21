@@ -67,6 +67,15 @@ impl Env {
     pub fn claude_skills(&self) -> PathBuf {
         self.claude_dir.join("skills")
     }
+
+    /// Registers a named account via `lore init --account <name>`.
+    pub fn register_account(&self, name: &str) {
+        self.lore().arg("init").arg("--account").arg(name).assert().success();
+    }
+
+    pub fn account_skills(&self, name: &str) -> PathBuf {
+        self.home.path().join(format!(".claude-{name}/skills"))
+    }
 }
 
 pub fn make_skill(base: &Path, name: &str) -> PathBuf {
