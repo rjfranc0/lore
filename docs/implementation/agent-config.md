@@ -74,9 +74,12 @@ target exists. `is_live` uses `Path::is_dir` (*does* follow the link) so it
 answers "does the thing this points at actually exist as a directory right
 now." A symlink is **broken** exactly when `is_link(path) && !is_live(path)`
 — this exact combination is how `lore list` decides whether to print
-`✗ broken`, and how `accounts sync` (see
+`✗ broken`, how `accounts sync` (see
 [@/implementation/accounts.md]) decides whether an account needs
-re-wiring. Collapsing these two checks into one (e.g. just using `is_dir()`
+re-wiring, and how `lore update --all` finds its candidates (see
+[@/functional/agent-config.md#feature-update]) — three independent inline
+copies of the same check, not a shared helper. Collapsing these two checks
+into one (e.g. just using `is_dir()`
 everywhere) would make a broken symlink indistinguishable from "nothing is
 here," which is a different state `list` needs to report differently.
 
@@ -136,7 +139,15 @@ only the thin `run()` wrapper touches that I/O. From there:
   unlike `list` does not sort them — prompt order follows
   `std::fs::read_dir`'s unspecified order within each directory (skills
   are always prompted before behaviors; order within either kind is not
-  guaranteed).
+  guaranteed). A relink itself succeeding is never undone by a failure in
+  the `AGENTS.md` bookkeeping that follows it — `update_one` and
+  `relink_candidate` both call `sync_behavior_entry` through
+  `warn_on_sync_failure`, which turns its `Err` into a printed warning
+  instead of propagating it, so a single candidate's bookkeeping failure
+  (e.g. no resolvable entry file at the new location) never aborts the
+  rest of an `--all` scan. `update_all` only attempts to load `AgentsMd`
+  at all if at least one candidate is a behavior — a skill-only `--all`
+  run never requires `AGENTS.md` to exist.
 
 ## What breaks if this is touched
 

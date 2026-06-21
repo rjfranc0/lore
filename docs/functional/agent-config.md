@@ -221,6 +221,13 @@ re-deriving the `AGENTS.md` entry for behaviors by hand too.
   path; a blank answer skips that entry (reported, scan continues) and a
   non-directory answer warns and skips it too — one bad answer never
   aborts the rest of the scan.
+- Given a candidate relinks successfully but the subsequent `AGENTS.md`
+  bookkeeping step then fails (e.g. a behavior's new location has no
+  resolvable entry file, or `AGENTS.md` itself doesn't exist), when `lore
+  update`/`lore update --all` runs, then the relink stands — only the
+  `AGENTS.md` update is skipped, reported as a warning naming the
+  behavior; for `--all`, the scan continues to the next candidate exactly
+  as it does for a skipped blank/non-directory answer.
 - Given neither `<name>` nor `--all` is given (or both are given), when
   `lore update` runs, then it fails with a clear error rather than
   guessing intent.
@@ -236,6 +243,14 @@ against the built binary):
 ✓ Relinked cooking-chef → /new/repo/skills/cooking-chef
 ✓ Relinked restaurant-rules → /new/repo/behaviors/restaurant-rules
 ✓ Updated AGENTS.md entry for restaurant-rules → /home/you/.agents/behaviors/restaurant-rules/README.md
+```
+
+**Example** (new location has no resolvable entry file — relink still
+completes, only the `AGENTS.md` update is skipped; verified against the
+built binary):
+```
+✓ Relinked my-rules → /new/repo/no-entry-here
+⚠  Could not update AGENTS.md entry for my-rules: no .md entry point found in /home/you/.agents/behaviors/my-rules
 ```
 
 **Out of scope**: `update` only ever changes *where a symlink points*. It
