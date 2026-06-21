@@ -110,36 +110,36 @@ fn account_migration_is_idempotent_single_from_claude_block() {
 }
 
 #[test]
-fn sync_rewires_broken_skills_symlink() {
+fn sync_rewires_missing_skills_dir() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
     env.lore().arg("init").arg("--account").arg("work").assert().success();
 
     let work_skills = env.home.path().join(".claude-work/skills");
-    assert!(work_skills.is_symlink());
-    std::fs::remove_file(&work_skills).unwrap();
+    assert!(work_skills.is_dir() && !work_skills.is_symlink());
+    std::fs::remove_dir_all(&work_skills).unwrap();
     assert!(!work_skills.exists());
 
     env.lore().arg("accounts").arg("sync").assert().success();
 
-    assert!(work_skills.is_symlink());
+    assert!(work_skills.is_dir() && !work_skills.is_symlink());
 }
 
 #[test]
-fn sync_rewires_skills_path_replaced_by_real_directory() {
+fn sync_rewires_skills_path_replaced_by_stray_symlink() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
     env.lore().arg("init").arg("--account").arg("work").assert().success();
 
     let work_skills = env.home.path().join(".claude-work/skills");
-    assert!(work_skills.is_symlink());
-    std::fs::remove_file(&work_skills).unwrap();
-    std::fs::create_dir(&work_skills).unwrap();
     assert!(work_skills.is_dir() && !work_skills.is_symlink());
+    std::fs::remove_dir_all(&work_skills).unwrap();
+    std::os::unix::fs::symlink(env.agents_dir.join("skills"), &work_skills).unwrap();
+    assert!(work_skills.is_symlink());
 
     env.lore().arg("accounts").arg("sync").assert().success();
 
-    assert!(work_skills.is_symlink());
+    assert!(work_skills.is_dir() && !work_skills.is_symlink());
 }
 
 #[test]
@@ -390,6 +390,6 @@ fn two_accounts_isolated() {
     assert!(default_lore_md.contains(&format!("@{}", env.agents_md().display())));
     assert!(work_lore_md_content.contains(&format!("@{}", env.agents_md().display())));
 
-    assert!(env.claude_skills().is_symlink());
-    assert!(work_dir.join("skills").is_symlink());
+    assert!(env.claude_skills().is_dir() && !env.claude_skills().is_symlink());
+    assert!(work_dir.join("skills").is_dir() && !work_dir.join("skills").is_symlink());
 }

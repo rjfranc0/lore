@@ -10,7 +10,8 @@ fn creates_expected_structure() {
     assert!(env.agents_dir.join("behaviors").is_dir());
     assert!(env.agents_md().is_file());
     assert!(env.claude_md().is_file());
-    assert!(env.claude_skills().is_symlink());
+    assert!(env.claude_skills().is_dir());
+    assert!(!env.claude_skills().is_symlink());
 
     let claude_md = fs::read_to_string(env.claude_md()).unwrap();
     assert!(claude_md.contains(&format!("@{}", env.lore_md().display())));
@@ -42,7 +43,8 @@ fn is_idempotent() {
 
     env.lore().arg("init").assert().success();
 
-    assert!(env.claude_skills().is_symlink());
+    assert!(env.claude_skills().is_dir());
+    assert!(!env.claude_skills().is_symlink());
     assert_eq!(claude_md_before, fs::read_to_string(env.claude_md()).unwrap());
     assert_eq!(lore_md_before, fs::read_to_string(env.lore_md()).unwrap());
 }
@@ -152,6 +154,56 @@ fn safe_fail_on_skill_collision_claude_md_not_written() {
     assert!(content.contains(&format!("@{}", env.agents_md().display())));
     // skills symlink must not have been created
     assert!(!env.claude_skills().is_symlink());
+}
+
+#[test]
+fn account_skills_dir_is_real_directory_not_symlink() {
+    let env = Env::new();
+    env.lore().arg("init").arg("--account").arg("work").assert().success();
+
+    let work_skills = env.home.path().join(".claude-work/skills");
+    assert!(work_skills.is_dir());
+    assert!(!work_skills.is_symlink());
+}
+
+#[test]
+fn reinit_relinks_shared_skills_without_deleting_account_specific_symlinks() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.lore().arg("init").arg("--account").arg("work").assert().success();
+
+    let src = env.home.path().join("src");
+    crate::helpers::make_skill(&src, "shared-one");
+    env.lore().arg("install").arg("shared-one").current_dir(&src).assert().success();
+
+    let work_skills = env.home.path().join(".claude-work/skills");
+    let account_only = work_skills.join("account-only");
+    std::os::unix::fs::symlink(src.join("shared-one"), &account_only).unwrap();
+
+    env.lore().arg("init").arg("--account").arg("work").assert().success();
+
+    assert!(work_skills.join("shared-one").is_symlink());
+    assert!(account_only.is_symlink(), "account-specific symlink must survive re-init");
+}
+
+#[test]
+fn migration_absorbs_real_dirs_but_leaves_symlinks_and_keeps_skills_dir() {
+    let env = Env::new();
+    let claude_skills = env.claude_skills();
+
+    crate::helpers::make_skill(&claude_skills, "legacy-skill");
+
+    let elsewhere = env.home.path().join("elsewhere");
+    crate::helpers::make_skill(&elsewhere, "linked-skill");
+    std::os::unix::fs::symlink(elsewhere.join("linked-skill"), claude_skills.join("linked-skill"))
+        .unwrap();
+
+    env.lore().arg("init").assert().success();
+
+    assert!(env.agents_dir.join("skills/legacy-skill").is_dir());
+    assert!(claude_skills.is_dir() && !claude_skills.is_symlink());
+    assert!(claude_skills.join("linked-skill").is_symlink());
+    assert!(claude_skills.join("legacy-skill").is_symlink());
 }
 
 #[test]
