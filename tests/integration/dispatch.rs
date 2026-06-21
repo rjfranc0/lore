@@ -35,10 +35,7 @@ fn help_exits_0_and_prints_manual() {
 #[test]
 fn dash_dash_help_exits_0() {
     let env = Env::new();
-    env.lore()
-        .arg("--help")
-        .assert()
-        .success();
+    env.lore().arg("--help").assert().success();
 }
 
 #[test]

@@ -8,4 +8,5 @@ mod install;
 mod list;
 mod remove;
 mod sync;
+mod update;
 mod version;

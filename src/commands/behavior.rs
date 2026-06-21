@@ -1,5 +1,10 @@
+use crate::{
+    agents_md::{AgentsMd, behavior_entry},
+    output,
+    paths::Paths,
+    symlink,
+};
 use anyhow::Result;
-use crate::{agents_md::{AgentsMd, behavior_entry}, output, paths::Paths, symlink};
 
 pub fn add(names: Vec<String>) -> Result<()> {
     let p = Paths::load()?;
@@ -52,7 +57,10 @@ pub fn remove(names: Vec<String>) -> Result<()> {
         } else if dst.is_dir() {
             output::warn(&format!("{name} is a built-in behavior — remove manually:"));
             output::note(&format!("rm -rf {}", dst.display()));
-            output::note(&format!("Then remove its <!-- {name} --> block from {}", p.agents_md.display()));
+            output::note(&format!(
+                "Then remove its <!-- {name} --> block from {}",
+                p.agents_md.display()
+            ));
         } else {
             output::warn(&format!("{name} is not installed"));
         }

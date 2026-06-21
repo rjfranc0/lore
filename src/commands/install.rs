@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::{output, paths::Paths, symlink};
+use anyhow::Result;
 
 pub fn run(skills: Vec<String>) -> Result<()> {
     let p = Paths::load()?;

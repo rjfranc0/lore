@@ -1,5 +1,5 @@
-use std::fs;
 use crate::helpers::Env;
+use std::fs;
 
 #[test]
 fn creates_expected_structure() {
@@ -26,7 +26,11 @@ fn first_run_creates_config_with_default_account() {
     assert!(env.config_path.is_file());
     let config = fs::read_to_string(&env.config_path).unwrap();
     assert!(config.contains(&format!("agents_dir = \"{}\"", env.agents_dir.display())));
-    assert!(config.lines().any(|l| l == format!("default = \"{}\"", env.claude_dir.display())));
+    assert!(
+        config
+            .lines()
+            .any(|l| l == format!("default = \"{}\"", env.claude_dir.display()))
+    );
 }
 
 #[test]
@@ -89,8 +93,13 @@ fn recovery_reregisters_existing_behaviors_when_agents_md_deleted() {
     // Add a behavior
     let bsrc = env.home.path().join("src-behaviors");
     crate::helpers::make_behavior(&bsrc, "my-rules", "RULES.md");
-    env.lore().arg("behavior").arg("add").arg("my-rules")
-        .current_dir(&bsrc).assert().success();
+    env.lore()
+        .arg("behavior")
+        .arg("add")
+        .arg("my-rules")
+        .current_dir(&bsrc)
+        .assert()
+        .success();
 
     let agents_md = fs::read_to_string(env.agents_md()).unwrap();
     assert!(agents_md.contains("<!-- my-rules -->"));

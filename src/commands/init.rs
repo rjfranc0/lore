@@ -18,7 +18,10 @@ pub fn run(account: Option<String>) -> Result<()> {
         if name.is_empty() {
             anyhow::bail!("invalid account name: must not be empty");
         }
-        if let Some(bad) = name.chars().find(|c| !c.is_ascii_alphanumeric() && *c != '-') {
+        if let Some(bad) = name
+            .chars()
+            .find(|c| !c.is_ascii_alphanumeric() && *c != '-')
+        {
             anyhow::bail!(
                 "invalid account name '{name}': only alphanumeric characters and hyphens are allowed (found '{bad}')"
             );
@@ -35,7 +38,9 @@ pub fn run(account: Option<String>) -> Result<()> {
         // both must resolve through the same registry entry, never a second,
         // untracked `~/.claude-default/`.
         config.account_path("default").unwrap_or_else(|| {
-            dirs::home_dir().expect("cannot determine home directory").join(".claude")
+            dirs::home_dir()
+                .expect("cannot determine home directory")
+                .join(".claude")
         })
     } else {
         dirs::home_dir()
@@ -75,9 +80,18 @@ pub fn run(account: Option<String>) -> Result<()> {
             output::ok(&format!("Migrated CLAUDE.md → {}", rules.display()));
             output::ok(&format!("Created {}", p.agents_md.display()));
             output::note("");
-            output::note(&format!("Your old instructions live at:  {}", rules.display()));
-            output::note(&format!("Do not edit:                    {}", claude_md.display()));
-            output::note(&format!("Do not edit:                    {}", p.agents_md.display()));
+            output::note(&format!(
+                "Your old instructions live at:  {}",
+                rules.display()
+            ));
+            output::note(&format!(
+                "Do not edit:                    {}",
+                claude_md.display()
+            ));
+            output::note(&format!(
+                "Do not edit:                    {}",
+                p.agents_md.display()
+            ));
             output::note("Both are managed by lore.");
         } else {
             // Case 1: clean install (or recovery)
@@ -130,7 +144,10 @@ pub fn run(account: Option<String>) -> Result<()> {
         }
 
         if moved > 0 {
-            output::ok(&format!("Moved {moved} skill(s) to {}", p.skills_dir.display()));
+            output::ok(&format!(
+                "Moved {moved} skill(s) to {}",
+                p.skills_dir.display()
+            ));
         }
 
         // Try to remove the now-empty dir
@@ -151,7 +168,10 @@ pub fn run(account: Option<String>) -> Result<()> {
     // ── Register account ─────────────────────────────────────────────────────
 
     if !config.accounts.contains_key(&account_name) {
-        config.accounts.insert(account_name.clone(), claude_dir.to_string_lossy().into_owned());
+        config.accounts.insert(
+            account_name.clone(),
+            claude_dir.to_string_lossy().into_owned(),
+        );
         config.save(&config_path)?;
         output::ok(&format!("Registered account: {account_name}"));
     }

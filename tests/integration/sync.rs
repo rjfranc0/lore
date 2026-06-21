@@ -1,5 +1,5 @@
-use std::fs;
 use crate::helpers::{Env, make_behavior};
+use std::fs;
 
 #[test]
 fn adds_behavior_on_disk_not_yet_in_agents_md() {
@@ -14,7 +14,10 @@ fn adds_behavior_on_disk_not_yet_in_agents_md() {
 
     let agents_md = fs::read_to_string(env.agents_md()).unwrap();
     assert!(agents_md.contains("<!-- new-b -->"));
-    assert!(agents_md.contains(&format!("@{}", env.agents_dir.join("behaviors/new-b/RULES.md").display())));
+    assert!(agents_md.contains(&format!(
+        "@{}",
+        env.agents_dir.join("behaviors/new-b/RULES.md").display()
+    )));
 }
 
 #[test]
@@ -25,7 +28,13 @@ fn removes_stale_entry_when_behavior_dir_gone() {
     let bsrc = env.home.path().join("bsrc");
     make_behavior(&bsrc, "bye", "RULES.md");
 
-    env.lore().arg("behavior").arg("add").arg("bye").current_dir(&bsrc).assert().success();
+    env.lore()
+        .arg("behavior")
+        .arg("add")
+        .arg("bye")
+        .current_dir(&bsrc)
+        .assert()
+        .success();
 
     // Remove the symlink (simulating the dir being gone)
     fs::remove_file(env.agents_dir.join("behaviors/bye")).unwrap();
@@ -44,9 +53,17 @@ fn no_op_when_already_in_sync() {
     let bsrc = env.home.path().join("bsrc");
     make_behavior(&bsrc, "steady", "RULES.md");
 
-    env.lore().arg("behavior").arg("add").arg("steady").current_dir(&bsrc).assert().success();
-    env.lore().arg("sync")
-        .assert().success()
+    env.lore()
+        .arg("behavior")
+        .arg("add")
+        .arg("steady")
+        .current_dir(&bsrc)
+        .assert()
+        .success();
+    env.lore()
+        .arg("sync")
+        .assert()
+        .success()
         .stdout(predicates::str::contains("already in sync"));
 
     let agents_md = fs::read_to_string(env.agents_md()).unwrap();
@@ -63,7 +80,10 @@ fn handles_split_scenario_removes_old_adds_new() {
     fs::create_dir_all(&from_claude).unwrap();
     fs::write(from_claude.join("RULES.md"), "old rules\n").unwrap();
     let mut agents_md = fs::read_to_string(env.agents_md()).unwrap();
-    agents_md.push_str(&format!("\n<!-- from-claude -->\n@{}/behaviors/from-claude/RULES.md\n", env.agents_dir.display()));
+    agents_md.push_str(&format!(
+        "\n<!-- from-claude -->\n@{}/behaviors/from-claude/RULES.md\n",
+        env.agents_dir.display()
+    ));
     fs::write(env.agents_md(), &agents_md).unwrap();
 
     // Create two new split behaviors
@@ -88,7 +108,9 @@ fn handles_split_scenario_removes_old_adds_new() {
 #[test]
 fn fails_with_helpful_message_before_init() {
     let env = Env::new();
-    env.lore().arg("sync")
-        .assert().failure()
+    env.lore()
+        .arg("sync")
+        .assert()
+        .failure()
         .stderr(predicates::str::contains("lore init"));
 }
