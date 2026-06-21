@@ -20,10 +20,16 @@ forget.
   in that `lore init` (no flag) always resolves to it — it is not a
   different *kind* of account, just the one with no name argument.
 - **Registered** vs. **wired**: an account is *registered* if it has an
-  entry in `lore.toml`'s `[accounts]` table. It is *wired* if `CLAUDE.md` and
-  the skills symlink actually exist correctly on disk at that path. These
-  can drift apart (disk state changes without the registry knowing) —
-  `accounts sync` is what reconciles them back together.
+  entry in `lore.toml`'s `[accounts]` table. It is *wired* if `CLAUDE.md`,
+  `LORE.md`, and the skills symlink actually exist correctly on disk at
+  that path. These can drift apart (disk state changes without the
+  registry knowing) — `accounts sync` is what reconciles them back
+  together.
+- **`LORE.md`**: a file fully owned by lore, one per Claude account
+  (`~/.claude/LORE.md` for `default`, `~/.claude-<name>/LORE.md` for a
+  named account). It imports the shared `AGENTS.md` and is the thing
+  `CLAUDE.md` itself imports — see "CLAUDE.md: surgical, never fully
+  overwritten," below.
 
 ## Feature: the config file's bootstrap behavior
 
@@ -50,33 +56,63 @@ already.
 ## Feature: `lore init` (default account)
 
 **What it does**: bootstraps `~/.agents/` (creates `AGENTS.md`, `skills/`,
-`behaviors/` if missing) and wires the `default` Claude account: writes
-`~/.claude/CLAUDE.md` with a single `@import` pointing at `AGENTS.md`, and
-symlinks `~/.claude/skills → ~/.agents/skills`. Registers `default` in the
-config the first time it runs.
+`behaviors/` if missing) — independently — and wires the `default` Claude
+account: creates/updates `~/.claude/LORE.md` to import `AGENTS.md`,
+surgically wires `~/.claude/CLAUDE.md` to import `LORE.md` without ever
+overwriting it, and symlinks `~/.claude/skills → ~/.agents/skills`.
+Registers `default` in the config the first time it runs.
 
 **Why idempotent**: re-running must be safe — it's the documented recovery
 path if `AGENTS.md` ever gets deleted by accident (it gets rebuilt,
-re-registering every behavior still present on disk).
+re-registering every behavior still present on disk), and `LORE.md`/
+`CLAUDE.md` wiring is safe to repeat on every run regardless.
 
-### Case 1 — clean install
+### AGENTS.md: created once, recovered if deleted
 
-No existing `~/.claude/CLAUDE.md` with real content. `AGENTS.md` is created
-fresh. If `~/.agents/behaviors/` already has directories on disk (the
-recovery scenario), each one is re-registered into the new `AGENTS.md` and
-logged — nothing already on disk is lost just because the index file was.
+If `AGENTS.md` is missing, it's created fresh; if `~/.agents/behaviors/`
+already has directories on disk (the recovery scenario), each one is
+re-registered into the new `AGENTS.md` and logged — nothing already on
+disk is lost just because the index file was. If `AGENTS.md` already
+exists, this step is skipped entirely and prints "AGENTS.md exists —
+skipping." **This no longer has anything to do with CLAUDE.md's state** —
+before `LORE.md` existed, AGENTS.md's creation and CLAUDE.md's migration
+were one gated decision; now they're two independent steps that both run
+on every `init`.
 
-### Case 2 — migrate an existing setup
+### LORE.md: always fresh, never stale
 
-`~/.claude/CLAUDE.md` exists with real content that isn't already lore's own
-`@import` line. That content is copied verbatim to
+`LORE.md` is rewritten on every `init` run, unconditionally — it's fully
+lore's own file (nothing else ever writes to it), so there's nothing to
+lose by always re-deriving its import line.
+
+### CLAUDE.md: surgical, never fully overwritten
+
+This is the part that runs on *every* `init`, for *every* account,
+independent of `AGENTS.md`'s state:
+
+| State of CLAUDE.md | Action |
+|---|---|
+| Already imports `LORE.md` | Skip — idempotent |
+| Imports `AGENTS.md` directly (the legacy, pre-`LORE.md` line) | That one line is replaced with the `LORE.md` import |
+| Has other content, no lore import yet | Migrated (see below); the import is appended below the original content |
+| Empty or absent | The `LORE.md` import is written as the whole file |
+
+**Migration** (the third row): existing content is copied verbatim to
 `~/.agents/behaviors/from-claude/RULES.md`, registered as a behavior named
-`from-claude`, and `CLAUDE.md` is then overwritten with lore's `@import`.
-Any real (non-symlinked) skill directories sitting in `~/.claude/skills/`
-are moved into `~/.agents/skills/` before the symlink replaces that path.
+`from-claude`, and the `LORE.md` import is appended *underneath* the
+original content — the original text stays exactly where the user left
+it, never replaced. Any line in that original content which itself starts
+with `@` (another tool's own import line) is named explicitly in the
+migration warning and left untouched, since it isn't lore's to manage.
 
-> Nothing is ever deleted in this path — old content is always relocated,
-> never discarded, and lore prints exactly where each piece landed.
+> Nothing is ever deleted or overwritten in this path — old content is
+> always relocated *and* kept live in place, never discarded, and lore
+> prints exactly where each piece landed plus every foreign import line it
+> saw and left alone.
+
+Any real (non-symlinked) skill directories sitting in `~/.claude/skills/`
+are moved into `~/.agents/skills/` before the symlink replaces that path —
+unaffected by the `LORE.md` change.
 
 **Skill collision is a hard stop**: if a real skill being migrated from
 `~/.claude/skills/` shares a name with one already in `~/.agents/skills/`,
@@ -87,14 +123,14 @@ than stopping early. The fix is manual: resolve the name conflict, re-run
 `init`.
 
 **Acceptance conditions**:
-- Given `~/.claude/CLAUDE.md` already contains lore's own `@import` line (a
-  re-run), when `init` runs, then this is treated as "nothing to migrate,"
-  not as Case 2 — migration only fires once.
+- Given `~/.claude/CLAUDE.md` already imports `LORE.md` (a re-run), when
+  `init` runs, then nothing changes — migration only ever happens once per
+  account.
 - Given `AGENTS.md` already exists, when `init` runs again, then the
-  AGENTS.md-creation step is skipped entirely (prints "AGENTS.md exists —
-  skipping") — `init`'s migration logic only ever runs once per machine, by
-  design; it is not a sync mechanism (that's `accounts sync`, for wiring
-  drift, not content migration).
+  AGENTS.md-creation step is skipped (prints "AGENTS.md exists —
+  skipping") — but `LORE.md`/`CLAUDE.md` wiring still runs every time, for
+  every account, since (unlike before) it isn't gated on AGENTS.md's
+  absence.
 
 ## Feature: `lore init --account <name>`
 
@@ -116,14 +152,26 @@ resolve through the exact same registry entry and the exact same
 `~/.claude-default/` directory invisible to every other `accounts` command,
 the moment someone typed the implicit default's name back explicitly.
 
+**Per-account `LORE.md`, shared `AGENTS.md`**: each account gets its own
+`LORE.md` (`~/.claude-<name>/LORE.md`), and every account's `LORE.md`
+imports the exact same shared `~/.agents/AGENTS.md` — there's still only
+one universal skills/behaviors tree. But if *this* account's `CLAUDE.md`
+has content to migrate, that content registers into *this account's own*
+`LORE.md`, never into the shared `AGENTS.md` — a named account's stray
+instructions never leak into every other account's config.
+
 **Acceptance conditions**:
 - Given `--account work` runs twice, when the config is inspected, then
   exactly one `work` entry exists (idempotent registration, not a
   duplicate).
 - Given two different account names are initialized, when each is
   inspected, then both are fully wired and isolated from each other — same
-  `AGENTS.md`/skills tree underneath, independent `CLAUDE.md` + skills
-  symlink per account.
+  `AGENTS.md`/skills tree underneath, independent `LORE.md` + `CLAUDE.md` +
+  skills symlink per account.
+- Given `~/.claude-work/CLAUDE.md` has content to migrate, when `init
+  --account work` runs, then the migrated copy registers in
+  `~/.claude-work/LORE.md`, and the shared `~/.agents/AGENTS.md` is left
+  untouched.
 
 ## Feature: `accounts list`
 
@@ -158,30 +206,38 @@ forgetting it *and* wiping its directory would not be.
 ## Feature: accounts sync
 
 **What it does**: for every account in the registry, checks whether it's
-actually wired correctly (`CLAUDE.md` exists and contains the right
-`@import`, the skills symlink exists and resolves to a live directory). Any
-account that fails either check gets fully re-wired via the same path
-`init` uses, and the rewire is reported by name. If every account was
-already correct, reports "Accounts already in sync" instead.
+actually wired correctly — `CLAUDE.md` imports `LORE.md`, **and** `LORE.md`
+itself imports `AGENTS.md`, **and** the skills symlink exists and resolves
+to a live directory. Any account that fails any of these checks gets fully
+re-wired via the same path `init` uses (the same surgical CLAUDE.md
+handling, not a shortcut), and the rewire is reported by name. If every
+account was already correct, reports "Accounts already in sync" instead.
 
 **Why**: accounts can break independently of lore (a user deletes a
-`CLAUDE.md` by hand, a skills symlink target moves) — `sync` is the repair
-tool, parallel to the original `lore sync` but scoped to Claude wiring
-instead of `AGENTS.md` content. The two `sync` commands are intentionally
-separate (`lore sync` vs. `lore accounts sync`) rather than one command with
-a flag, to keep each one's blast radius obvious from its own name.
+`CLAUDE.md` or `LORE.md` by hand, a skills symlink target moves) — `sync`
+is the repair tool, parallel to the original `lore sync` but scoped to
+Claude wiring instead of `AGENTS.md` content. The two `sync` commands are
+intentionally separate (`lore sync` vs. `lore accounts sync`) rather than
+one command with a flag, to keep each one's blast radius obvious from its
+own name.
 
 **Acceptance conditions**:
 - Given an account's `CLAUDE.md` is deleted, when `accounts sync` runs, then
   it is recreated with correct content and the rewire is reported.
+- Given an account's `LORE.md` is deleted, when `accounts sync` runs, then
+  it is recreated with the correct `AGENTS.md` import.
+- Given an account's `CLAUDE.md` lost its `LORE.md` import line (but the
+  file itself still exists), when `accounts sync` runs, then it's rewired
+  back to importing `LORE.md`.
 - Given an account's skills symlink is broken (deleted or dangling), when
   `accounts sync` runs, then it is recreated.
-- Given every account is already correctly wired, when `accounts sync` runs,
-  then nothing is rewritten and it reports as such.
+- Given every account is already correctly wired (both hops, plus skills),
+  when `accounts sync` runs, then nothing is rewritten and it reports as
+  such.
 
-> ⚠️ **Inferred:** a read failure on `CLAUDE.md` (permission denied,
-> non-UTF8 content) is treated the same as "not wired" and triggers a
-> rewire, rather than being surfaced as a distinct error. This is a
+> ⚠️ **Inferred:** a read failure on `CLAUDE.md` or `LORE.md` (permission
+> denied, non-UTF8 content) is treated the same as "not wired" and triggers
+> a rewire, rather than being surfaced as a distinct error. This is a
 > deliberate choice (a self-healing command shouldn't need a separate error
 > branch for an unreadable-but-fixable file), confirmed during this
 > feature's own review pass rather than guessed from code alone.
@@ -196,6 +252,7 @@ a flag, to keep each one's blast radius obvious from its own name.
 | Registry-only on `accounts remove` | Also wipe the account's directory from disk | Consistent with the non-destructive philosophy applied everywhere else in this tool |
 | Clean break removing `AGENTS_DIR`/`CLAUDE_DIR` env vars | Deprecation warnings first | lore is pre-1.0; no installed base to protect from a breaking change |
 | `--account default` unified with the implicit default | Reject `--account default` outright as an error | A silent second untracked directory was strictly worse than either valid option; unification was chosen as the more forgiving of the two |
+| `LORE.md` as an intermediary, `CLAUDE.md` import surgical | `CLAUDE.md` keeps directly `@import`-ing `AGENTS.md`, fully overwritten on every `init` | The direct-overwrite model broke coexistence with other tools (e.g. `rtk`) that write their own lines into `CLAUDE.md`. `LORE.md` is the file lore fully owns and can safely overwrite; `CLAUDE.md` becomes shared ground lore only ever appends one line to |
 
 ## Non-goals (this domain)
 

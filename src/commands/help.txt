@@ -17,19 +17,28 @@ DESCRIPTION
 
 COMMANDS
        init [--account <name>]
-              Bootstrap ~/.agents/ and wire Claude. Handles two cases:
+              Bootstrap ~/.agents/ and wire Claude.
 
-              Case 1 — empty install:
-                     Creates AGENTS.md, skills/, and behaviors/.
-                     Writes @~/.agents/AGENTS.md into ~/.claude/CLAUDE.md.
-                     Symlinks ~/.claude/skills → ~/.agents/skills.
+              Creates AGENTS.md, skills/, and behaviors/ if missing.
+              Creates/updates LORE.md (fully lore-owned) to import
+              AGENTS.md. Then wires CLAUDE.md surgically:
 
-              Case 2 — existing CLAUDE.md or skills/:
-                     Migrates CLAUDE.md content to
-                         ~/.agents/behaviors/from-claude/RULES.md
-                     Moves any real skills into ~/.agents/skills/.
-                     Overwrites CLAUDE.md with the @import.
-                     Logs where old instructions now live.
+                     @LORE.md already present  → untouched (idempotent)
+                     @AGENTS.md present        → that line replaced
+                                                  with @LORE.md
+                     other content, no import  → copied to
+                                                  behaviors/from-claude/
+                                                  RULES.md, registered,
+                                                  @LORE.md appended below
+                                                  the original content
+                     empty or absent           → @LORE.md written
+
+              CLAUDE.md is never fully overwritten — only lore's own
+              line is ever added or replaced. Any pre-existing @import
+              lines from other tools are named in the migration warning
+              and left untouched.
+
+              Symlinks ~/.claude/skills → ~/.agents/skills.
 
               On a skill-name collision, init stops before writing
               CLAUDE.md so config is never left half-wired. If
@@ -40,7 +49,9 @@ COMMANDS
                      Wires ~/.claude-<name>/ instead of ~/.claude/ and
                      registers <name> in the accounts registry. Name
                      must be alphanumeric/hyphens only — anything else
-                     is rejected before any disk operation.
+                     is rejected before any disk operation. Migrated
+                     content for a named account registers in that
+                     account's own LORE.md, not the shared AGENTS.md.
 
               Idempotent. Registers the account ("default" when no
               --account flag is given) in ~/.config/lore/lore.toml.
@@ -56,9 +67,9 @@ COMMANDS
 
        accounts sync
               Re-wire any registered account whose wiring is broken
-              on disk (missing CLAUDE.md, or a missing/dead skills
-              symlink). Reports each action, or that accounts are
-              already in sync.
+              on disk (missing/incorrect CLAUDE.md or LORE.md import,
+              or a missing/dead skills symlink). Reports each action,
+              or that accounts are already in sync.
 
        install <skill> [...]
               Install one or more skills from the current directory.
@@ -154,7 +165,9 @@ FILES
        ~/.agents/AGENTS.md          Universal agent instructions
        ~/.agents/skills/            Skill symlinks
        ~/.agents/behaviors/         Behavior symlinks + built-ins
-       ~/.claude/CLAUDE.md          Managed by lore: @import → AGENTS.md
+       ~/.claude/LORE.md            Managed by lore: @import → AGENTS.md
+       ~/.claude/CLAUDE.md          Managed by lore: @import → LORE.md
+                                     (surgical — only this one line is lore's)
        ~/.claude/skills             Symlink → ~/.agents/skills
        ~/.claude-<name>/            Per-account Claude dir (--account <name>)
 

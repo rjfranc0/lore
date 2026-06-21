@@ -15,11 +15,14 @@ one or more Claude accounts (`~/.claude/`, `~/.claude-<account>/`).
 
 ## Core idea
 
-Everything lore manages is either a symlink or one of two generated files
-(`AGENTS.md`, `CLAUDE.md`). Nothing is ever copied, and removing/uninstalling
-never modifies a skill or behavior's source repo — only the symlink lore
-created. See [functional/agent-config.md](functional/agent-config.md) for
-the full model.
+Everything lore manages is either a symlink or one of three generated files
+(`AGENTS.md`, `LORE.md`, `CLAUDE.md`) — though `CLAUDE.md` is special:
+lore only ever owns a single import line inside it, never the whole file,
+so it can coexist with other tools that write their own lines there.
+Nothing is ever copied, and removing/uninstalling never modifies a skill or
+behavior's source repo — only the symlink lore created. See
+[functional/agent-config.md](functional/agent-config.md) and
+[functional/accounts.md](functional/accounts.md) for the full model.
 
 ## Project facts
 
