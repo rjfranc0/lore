@@ -63,7 +63,8 @@ Everything reduces to three operations:
 
 1. **Symlink management** — create/remove links in `~/.agents/skills/` or `~/.agents/behaviors/`
 2. **AGENTS.md edits** — `AgentsMd` struct parses, mutates, and re-serializes the file
-3. **Claude wiring** — write `@AGENTS_MD` to `~/.claude/CLAUDE.md`, symlink `~/.claude/skills`
+3. **Claude wiring** — create/update `LORE.md` (`@AGENTS.md`), surgically wire `CLAUDE.md`
+   to import it (never fully overwritten), symlink `~/.claude/skills`
 
 ## Coding conventions
 
@@ -80,12 +81,16 @@ Everything reduces to three operations:
 2. Uninstalling never modifies source repos — only removes symlinks
 3. `behavior add` is idempotent — checks AGENTS.md before appending
 4. AGENTS.md block format is exactly two lines: `<!-- name -->` then `@/absolute/path`
-5. `init` case 2 must never lose existing CLAUDE.md content — always migrates to `from-claude`
+5. `init` migration must never lose existing CLAUDE.md content — the original text
+   stays live in CLAUDE.md itself (appended to, not replaced) and a copy is migrated
+   to `from-claude`
 6. Broken symlinks must appear in `lore list` (use `/*` glob, not `*/`)
 7. Config is always read via `LoreConfig::load_or_default` — never hand-roll a TOML read
 8. `Paths` is agents-only — no `claude_dir` field; per-account Claude dirs are resolved
    in `commands/init.rs`/`commands/accounts.rs` from the config's accounts registry
 9. `accounts remove` only ever touches the registry — never disk (`~/.claude-<name>/`)
+10. `LORE.md` is fully lore-owned and rewritten on every `init`; `CLAUDE.md` is only
+    ever touched surgically — a single line added or replaced, never fully overwritten
 
 ## AGENTS.md block format
 
