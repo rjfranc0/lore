@@ -28,7 +28,12 @@ impl Env {
         )
         .unwrap();
 
-        Self { home, agents_dir, claude_dir, config_path }
+        Self {
+            home,
+            agents_dir,
+            claude_dir,
+            config_path,
+        }
     }
 
     /// Like `new()`, but skips writing `lore.toml` — for tests proving true
@@ -39,7 +44,12 @@ impl Env {
         let claude_dir = home.path().join(".claude");
         let config_path = home.path().join(".config/lore/lore.toml");
 
-        Self { home, agents_dir, claude_dir, config_path }
+        Self {
+            home,
+            agents_dir,
+            claude_dir,
+            config_path,
+        }
     }
 
     pub fn lore(&self) -> assert_cmd::Command {

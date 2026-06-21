@@ -57,7 +57,10 @@ pub fn sync() -> Result<()> {
 
         if !already_wired {
             wire::wire_claude_dir(&p.agents_md, &p.skills_dir, &claude_dir)?;
-            output::ok(&format!("Re-wired account: {name} → {}", claude_dir.display()));
+            output::ok(&format!(
+                "Re-wired account: {name} → {}",
+                claude_dir.display()
+            ));
             rewired += 1;
         }
     }

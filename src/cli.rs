@@ -1,7 +1,12 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "lore", version, disable_version_flag = true, disable_help_subcommand = true)]
+#[command(
+    name = "lore",
+    version,
+    disable_version_flag = true,
+    disable_help_subcommand = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,

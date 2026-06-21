@@ -7,25 +7,23 @@ pub mod paths;
 pub mod symlink;
 pub mod wire;
 
-use std::process::ExitCode;
 use clap::Parser;
 use cli::{AccountsAction, BehaviorAction, Cli, Command};
+use std::process::ExitCode;
 
 pub fn run() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(c) => c,
-        Err(e) => {
-            match e.kind() {
-                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
-                    e.print().ok();
-                    return ExitCode::SUCCESS;
-                }
-                _ => {
-                    eprint!("{SHORT_HELP}");
-                    return ExitCode::FAILURE;
-                }
+        Err(e) => match e.kind() {
+            clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => {
+                e.print().ok();
+                return ExitCode::SUCCESS;
             }
-        }
+            _ => {
+                eprint!("{SHORT_HELP}");
+                return ExitCode::FAILURE;
+            }
+        },
     };
 
     let result = match cli.command {
@@ -41,19 +39,19 @@ pub fn run() -> ExitCode {
             commands::help::run();
             return ExitCode::SUCCESS;
         }
-        Some(Command::Init { account })       => commands::init::run(account),
-        Some(Command::Install { skills })    => commands::install::run(skills),
-        Some(Command::Remove  { skills })    => commands::remove::run(skills),
-        Some(Command::Sync)                  => commands::sync::run(),
-        Some(Command::List)                  => commands::list::run(),
+        Some(Command::Init { account }) => commands::init::run(account),
+        Some(Command::Install { skills }) => commands::install::run(skills),
+        Some(Command::Remove { skills }) => commands::remove::run(skills),
+        Some(Command::Sync) => commands::sync::run(),
+        Some(Command::List) => commands::list::run(),
         Some(Command::Behavior { action }) => match action {
-            BehaviorAction::Add    { names } => commands::behavior::add(names),
+            BehaviorAction::Add { names } => commands::behavior::add(names),
             BehaviorAction::Remove { names } => commands::behavior::remove(names),
         },
         Some(Command::Accounts { action }) => match action {
-            AccountsAction::List            => commands::accounts::list(),
+            AccountsAction::List => commands::accounts::list(),
             AccountsAction::Remove { name } => commands::accounts::remove(name),
-            AccountsAction::Sync            => commands::accounts::sync(),
+            AccountsAction::Sync => commands::accounts::sync(),
         },
     };
 
