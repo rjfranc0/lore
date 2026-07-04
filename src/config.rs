@@ -18,17 +18,22 @@ impl Default for LoreConfig {
             .join(".agents")
             .to_string_lossy()
             .into_owned();
-        Self { agents_dir, accounts: BTreeMap::new() }
+        Self {
+            agents_dir,
+            accounts: BTreeMap::new(),
+        }
     }
 }
 
 impl LoreConfig {
     pub fn config_path() -> PathBuf {
-        std::env::var("LORE_CONF").map(PathBuf::from).unwrap_or_else(|_| {
-            dirs::home_dir()
-                .expect("cannot determine home directory")
-                .join(".config/lore/lore.toml")
-        })
+        std::env::var("LORE_CONF")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .expect("cannot determine home directory")
+                    .join(".config/lore/lore.toml")
+            })
     }
 
     pub fn load_or_default(path: &Path) -> Result<Self> {
@@ -74,11 +79,18 @@ mod tests {
     fn load_or_default_parses_valid_toml() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("lore.toml");
-        std::fs::write(&path, "agents_dir = \"/tmp/agents\"\n\n[accounts]\ndefault = \"/tmp/claude\"\n").unwrap();
+        std::fs::write(
+            &path,
+            "agents_dir = \"/tmp/agents\"\n\n[accounts]\ndefault = \"/tmp/claude\"\n",
+        )
+        .unwrap();
 
         let config = LoreConfig::load_or_default(&path).unwrap();
         assert_eq!(config.agents_dir, "/tmp/agents");
-        assert_eq!(config.account_path("default"), Some(PathBuf::from("/tmp/claude")));
+        assert_eq!(
+            config.account_path("default"),
+            Some(PathBuf::from("/tmp/claude"))
+        );
     }
 
     #[test]
@@ -87,7 +99,9 @@ mod tests {
         let path = dir.path().join("lore.toml");
 
         let mut config = LoreConfig::default();
-        config.accounts.insert("work".into(), "/tmp/claude-work".into());
+        config
+            .accounts
+            .insert("work".into(), "/tmp/claude-work".into());
         config.save(&path).unwrap();
 
         let loaded = LoreConfig::load_or_default(&path).unwrap();

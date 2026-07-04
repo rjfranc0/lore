@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::{paths::Paths, symlink};
+use anyhow::Result;
 
 pub fn run() -> Result<()> {
     let p = Paths::load()?;
@@ -16,8 +16,16 @@ pub fn run() -> Result<()> {
             let name = entry.file_name();
             if symlink::is_link(&path) {
                 let target = std::fs::read_link(&path)?;
-                let suffix = if symlink::is_live(&path) { String::new() } else { "  ✗ broken".to_string() };
-                println!("  {:<24} → {}{suffix}", name.to_string_lossy(), target.display());
+                let suffix = if symlink::is_live(&path) {
+                    String::new()
+                } else {
+                    "  ✗ broken".to_string()
+                };
+                println!(
+                    "  {:<24} → {}{suffix}",
+                    name.to_string_lossy(),
+                    target.display()
+                );
                 found = true;
             } else if path.is_dir() {
                 println!("  {:<24}   (migrated)", name.to_string_lossy());
@@ -25,7 +33,9 @@ pub fn run() -> Result<()> {
             }
         }
     }
-    if !found { println!("  (none)"); }
+    if !found {
+        println!("  (none)");
+    }
 
     println!();
     println!("Behaviors:");
@@ -40,8 +50,16 @@ pub fn run() -> Result<()> {
             let name = entry.file_name();
             if symlink::is_link(&path) {
                 let target = std::fs::read_link(&path)?;
-                let suffix = if symlink::is_live(&path) { String::new() } else { "  ✗ broken".to_string() };
-                println!("  {:<24} → {}{suffix}", name.to_string_lossy(), target.display());
+                let suffix = if symlink::is_live(&path) {
+                    String::new()
+                } else {
+                    "  ✗ broken".to_string()
+                };
+                println!(
+                    "  {:<24} → {}{suffix}",
+                    name.to_string_lossy(),
+                    target.display()
+                );
                 found = true;
             } else if path.is_dir() {
                 println!("  {:<24}   (built-in)", name.to_string_lossy());
@@ -49,7 +67,9 @@ pub fn run() -> Result<()> {
             }
         }
     }
-    if !found { println!("  (none)"); }
+    if !found {
+        println!("  (none)");
+    }
 
     Ok(())
 }

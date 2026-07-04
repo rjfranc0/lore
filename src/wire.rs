@@ -35,7 +35,11 @@ pub fn wire_claude_dir(agents_md: &Path, skills_dir: &Path, claude_dir: &Path) -
         std::fs::remove_file(&claude_skills)?;
     }
     symlink::create(skills_dir, &claude_skills)?;
-    output::ok(&format!("Linked {}/skills → {}", claude_dir.display(), skills_dir.display()));
+    output::ok(&format!(
+        "Linked {}/skills → {}",
+        claude_dir.display(),
+        skills_dir.display()
+    ));
 
     Ok(())
 }

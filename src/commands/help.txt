@@ -110,6 +110,34 @@ COMMANDS
               Exits 0 in all cases, including when nothing changed.
               Requires 'lore init' to have run first.
 
+       update <name> [--path <path>]
+              Re-link a skill or behavior whose source has moved.
+              Relinks unconditionally — even if the symlink is already
+              healthy, not just when broken.
+
+                  Without --path: relinks to $PWD/<name>
+                  With --path:    relinks to <path> instead
+
+              For behaviors, also re-resolves the entry file and updates
+              the AGENTS.md @path line if the entry filename changed. If
+              AGENTS.md can't be updated (e.g. it doesn't exist, or the
+              new location has no resolvable entry file), the relink
+              still completes — only the AGENTS.md update is skipped,
+              with a warning.
+
+       update --all
+              Scan ~/.agents/skills/ and ~/.agents/behaviors/ for broken
+              symlinks and relink them interactively, prompting for a
+              new path per entry.
+
+                  blank answer            skip this entry, continue
+                  non-directory answer    warn, skip, continue
+                  AGENTS.md update fails  warn, continue (symlink itself
+                                          still relinked)
+
+              Exits 0 and prints "No broken symlinks found" if nothing
+              is broken.
+
        list
               Print all installed skills and behaviors with symlink
               targets. Flags broken symlinks with ✗ broken.
@@ -175,6 +203,13 @@ EXAMPLES
 
        List with status:
            lore list
+
+       Re-link after moving a repo:
+           cd ~/repos/ai-restaurant-v2/skills
+           lore update cooking-chef
+
+       Re-link everything broken:
+           lore update --all
 
        Dry-run against a temp config:
            LORE_CONF=/tmp/test-lore.toml lore init

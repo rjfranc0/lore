@@ -1,7 +1,12 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "lore", version, disable_version_flag = true, disable_help_subcommand = true)]
+#[command(
+    name = "lore",
+    version,
+    disable_version_flag = true,
+    disable_help_subcommand = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -36,6 +41,14 @@ pub enum Command {
     },
     /// Reconcile AGENTS.md from disk
     Sync,
+    /// Re-link a skill or behavior whose source has moved
+    Update {
+        name: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        path: Option<String>,
+    },
     /// Show installed skills and behaviors
     List,
     /// Print the version
