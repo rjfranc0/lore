@@ -6,6 +6,7 @@ use crate::{
     symlink, wire,
 };
 use anyhow::Result;
+use std::path::Path;
 
 pub fn add(names: Vec<String>, account: Option<String>) -> Result<()> {
     match account {
@@ -26,61 +27,14 @@ fn add_shared(names: Vec<String>) -> Result<()> {
     if !p.agents_md.exists() {
         anyhow::bail!("Run 'lore init' first");
     }
-    let cwd = std::env::current_dir()?;
-    let mut md = AgentsMd::load(&p.agents_md)?;
-
-    for raw in names {
-        let name = raw.trim_end_matches('/').to_string();
-        let src = cwd.join(&name);
-        let dst = p.behaviors_dir.join(&name);
-
-        if !src.is_dir() {
-            anyhow::bail!("'{}' not found in {}", name, cwd.display());
-        }
-
-        if !symlink::is_link(&dst) {
-            symlink::create(&src, &dst)?;
-            output::ok(&format!("Linked behavior {name}"));
-        }
-
-        let entry = behavior_entry(&dst)?;
-
-        if !md.contains_path(&entry) {
-            md.add(name.clone(), entry);
-            md.save(&p.agents_md)?;
-            output::ok(&format!("Added {name} to AGENTS.md"));
-        } else {
-            output::warn(&format!("{name} already in AGENTS.md"));
-        }
-    }
-    Ok(())
+    link_and_register(names, &p.behaviors_dir, &p.agents_md, "AGENTS.md")
 }
 
 fn remove_shared(names: Vec<String>) -> Result<()> {
     let p = Paths::load()?;
-
-    for raw in names {
-        let name = raw.trim_end_matches('/').to_string();
-        let dst = p.behaviors_dir.join(&name);
-
-        if symlink::is_link(&dst) {
-            let mut md = AgentsMd::load(&p.agents_md)?;
-            md.remove_by_name(&name);
-            md.save(&p.agents_md)?;
-            std::fs::remove_file(&dst)?;
-            output::ok(&format!("Removed behavior {name}"));
-        } else if dst.is_dir() {
-            output::warn(&format!("{name} is a built-in behavior — remove manually:"));
-            output::note(&format!("rm -rf {}", dst.display()));
-            output::note(&format!(
-                "Then remove its <!-- {name} --> block from {}",
-                p.agents_md.display()
-            ));
-        } else {
-            output::warn(&format!("{name} is not installed"));
-        }
-    }
-    Ok(())
+    unlink_and_deregister(names, &p.behaviors_dir, &p.agents_md, |name| {
+        format!("{name} is not installed")
+    })
 }
 
 fn add_scoped(names: Vec<String>, account: &str) -> Result<()> {
@@ -98,8 +52,32 @@ fn add_scoped(names: Vec<String>, account: &str) -> Result<()> {
     let behaviors_dir = wire::claude_behaviors_path(&claude_dir);
     std::fs::create_dir_all(&behaviors_dir)?;
 
+    link_and_register(names, &behaviors_dir, &lore_md, "LORE.md")
+}
+
+fn remove_scoped(names: Vec<String>, account: &str) -> Result<()> {
+    config::validate_account_name(account)?;
+    let config = LoreConfig::load_or_default(&LoreConfig::config_path())?;
+    let claude_dir = config.require_account_path(account)?;
+
+    let behaviors_dir = wire::claude_behaviors_path(&claude_dir);
+    let lore_md = wire::lore_md_path(&claude_dir);
+
+    unlink_and_deregister(names, &behaviors_dir, &lore_md, |name| {
+        format!("{name} is not installed in account '{account}'")
+    })
+}
+
+/// Symlinks each behavior into `behaviors_dir` and registers it in `md_path`
+/// (idempotent), shared by both the `AGENTS.md` and per-account `LORE.md` paths.
+fn link_and_register(
+    names: Vec<String>,
+    behaviors_dir: &Path,
+    md_path: &Path,
+    md_label: &str,
+) -> Result<()> {
     let cwd = std::env::current_dir()?;
-    let mut md = AgentsMd::load(&lore_md)?;
+    let mut md = AgentsMd::load(md_path)?;
 
     for raw in names {
         let name = raw.trim_end_matches('/').to_string();
@@ -119,31 +97,31 @@ fn add_scoped(names: Vec<String>, account: &str) -> Result<()> {
 
         if !md.contains_path(&entry) {
             md.add(name.clone(), entry);
-            md.save(&lore_md)?;
-            output::ok(&format!("Added {name} to LORE.md"));
+            md.save(md_path)?;
+            output::ok(&format!("Added {name} to {md_label}"));
         } else {
-            output::warn(&format!("{name} already in LORE.md"));
+            output::warn(&format!("{name} already in {md_label}"));
         }
     }
     Ok(())
 }
 
-fn remove_scoped(names: Vec<String>, account: &str) -> Result<()> {
-    config::validate_account_name(account)?;
-    let config = LoreConfig::load_or_default(&LoreConfig::config_path())?;
-    let claude_dir = config.require_account_path(account)?;
-
-    let behaviors_dir = wire::claude_behaviors_path(&claude_dir);
-    let lore_md = wire::lore_md_path(&claude_dir);
-
+/// Removes each behavior's symlink from `behaviors_dir` and deregisters it from
+/// `md_path`, shared by both the `AGENTS.md` and per-account `LORE.md` paths.
+fn unlink_and_deregister(
+    names: Vec<String>,
+    behaviors_dir: &Path,
+    md_path: &Path,
+    not_installed: impl Fn(&str) -> String,
+) -> Result<()> {
     for raw in names {
         let name = raw.trim_end_matches('/').to_string();
         let dst = behaviors_dir.join(&name);
 
         if symlink::is_link(&dst) {
-            let mut md = AgentsMd::load(&lore_md)?;
+            let mut md = AgentsMd::load(md_path)?;
             md.remove_by_name(&name);
-            md.save(&lore_md)?;
+            md.save(md_path)?;
             std::fs::remove_file(&dst)?;
             output::ok(&format!("Removed behavior {name}"));
         } else if dst.is_dir() {
@@ -151,10 +129,10 @@ fn remove_scoped(names: Vec<String>, account: &str) -> Result<()> {
             output::note(&format!("rm -rf {}", dst.display()));
             output::note(&format!(
                 "Then remove its <!-- {name} --> block from {}",
-                lore_md.display()
+                md_path.display()
             ));
         } else {
-            output::warn(&format!("{name} is not installed in account '{account}'"));
+            output::warn(&not_installed(&name));
         }
     }
     Ok(())
