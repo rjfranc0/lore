@@ -158,13 +158,24 @@ pub fn wire_claude_skills(skills_dir: &Path, claude_dir: &Path) -> Result<()> {
 /// Create-if-absent: skips silently when a link already exists there, so a
 /// caller can call this per-skill (`install`) or in a loop over all shared
 /// skills (`wire_claude_skills`) without ever overwriting an existing link.
+/// If a non-symlink entry already occupies the target (e.g. manual tampering,
+/// since lore itself never places one there post-init), warns and skips
+/// rather than failing the whole fan-out over one account's collision.
 pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<()> {
     let claude_skills = claude_skills_path(claude_dir);
     std::fs::create_dir_all(&claude_skills)?;
     let link = claude_skills.join(name);
-    if !symlink::is_link(&link) {
-        symlink::create(&skills_dir.join(name), &link)?;
+    if symlink::is_link(&link) {
+        return Ok(());
     }
+    if link.exists() {
+        output::warn(&format!(
+            "{name} exists in {} and is not a symlink — skipping re-link",
+            claude_skills.display()
+        ));
+        return Ok(());
+    }
+    symlink::create(&skills_dir.join(name), &link)?;
     Ok(())
 }
 
