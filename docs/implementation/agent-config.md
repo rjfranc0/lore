@@ -164,12 +164,10 @@ only the thin `run()` wrapper touches that I/O. From there:
   restores it on drift, then calls the same helper against
   `wire::claude_behaviors_path(&claude_dir)` with per-account wording
   (`Removed stale entry from {name}: {n}` / `Added {name}/{n} to
-  LORE.md`). A `total_changes` counter spans both passes: with more than
-  the default account registered and zero total changes, sync prints one
-  collapsed `✓ Already in sync`; otherwise (including the single-account
-  case, to keep that pre-existing report shape byte-identical) it emits
-  the old granular per-target "already in sync" lines for whichever
-  targets didn't change.
+  LORE.md`). A `total_changes` counter spans both passes: zero total
+  changes always prints one collapsed `✓ Already in sync`, regardless of
+  how many accounts are registered; otherwise it emits granular per-target
+  "already in sync" lines for whichever targets didn't change.
 - **list**: reads both `skills_dir` and `behaviors_dir`, sorted by
   filename, printing target + liveness for symlinks or a
   `(migrated)`/`(built-in)` tag for real directories.

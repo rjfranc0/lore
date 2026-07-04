@@ -234,12 +234,9 @@ via a shared `reconcile_behaviors` helper both passes call.
   then that account is skipped with a warning (not a failure) pointing at
   `lore init --account <name>`, and the rest of the run (AGENTS.md pass,
   other accounts) still completes.
-- Given nothing is out of sync anywhere and more than the default account
-  is registered, when `sync` runs, then it prints a single "✓ Already in
-  sync" and writes nothing. With only the default account registered (no
-  other accounts to report on), it keeps the pre-existing granular
-  "AGENTS.md already in sync" wording instead, to avoid regressing that
-  single-account report shape.
+- Given nothing is out of sync anywhere, when `sync` runs, then it prints a
+  single "✓ Already in sync" and writes nothing — regardless of how many
+  accounts are registered.
 - Given something changed somewhere but not everywhere, when `sync` runs,
   then it emits granular lines for the untouched targets — "AGENTS.md
   already in sync" and "account: `<name>` — already in sync" per unchanged
