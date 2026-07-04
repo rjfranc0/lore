@@ -71,7 +71,13 @@ pub fn run() -> Result<()> {
         }
     }
 
-    if total_changes == 0 {
+    // With only the default account registered, sync's report is the same
+    // shape it always was — keep the old per-target "AGENTS.md already in
+    // sync" wording so pre-multi-account behavior (and its tests) don't
+    // change. Once other accounts are registered, collapse everything into
+    // the single global message when nothing drifted anywhere.
+    let has_extra_accounts = config.accounts.len() > 1;
+    if total_changes == 0 && has_extra_accounts {
         output::ok("Already in sync");
         return Ok(());
     }
