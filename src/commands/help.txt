@@ -85,7 +85,7 @@ COMMANDS
               Remove skill symlinks. Source dirs are never touched.
               A trailing slash is stripped.
 
-       behavior add <name> [...]
+       behavior add <name> [...] [--account <name>]
               Install behaviors from the current directory.
               Requires 'lore init' to have run first.
 
@@ -102,7 +102,16 @@ COMMANDS
               Idempotent. Each step runs only if not already done.
               A trailing slash on the name is stripped.
 
-       behavior remove <name> [...]
+              --account <name>
+                     Scopes the behavior to ~/.claude-<name>/ instead
+                     of the shared ~/.agents/: symlink goes in
+                     ~/.claude-<name>/behaviors/ and the entry is
+                     appended to that account's LORE.md instead of
+                     AGENTS.md. Requires 'lore init --account <name>'
+                     to have run first (i.e. that account's LORE.md
+                     must already exist).
+
+       behavior remove <name> [...] [--account <name>]
               Removes the behavior symlink and its <!-- name --> + @path
               block from AGENTS.md. The name is matched exactly, so a
               behavior like a.c never clobbers a sibling like axc. A
@@ -110,6 +119,12 @@ COMMANDS
 
               Built-in behaviors (e.g. from-claude) must be removed
               manually — lore will tell you exactly what to do.
+
+              --account <name>
+                     Removes from ~/.claude-<name>/behaviors/ and that
+                     account's LORE.md instead of AGENTS.md. The
+                     @~/.agents/AGENTS.md header line in LORE.md is
+                     never removed.
 
        sync
               Reconcile AGENTS.md against behaviors currently on disk.
