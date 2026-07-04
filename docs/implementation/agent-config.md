@@ -146,11 +146,30 @@ only the thin `run()` wrapper touches that I/O. From there:
   [@/functional/agent-config.md#feature-behavior-add--remove]; the scoped
   call's warning names that account's `LORE.md` path instead of the
   shared `AGENTS.md`.
-- **sync**: walks `AgentsMd.behaviors`, drops any entry whose
-  `behaviors_dir.join(&b.name)` isn't a directory (stale), then walks
-  `behaviors_dir` on disk and adds any directory not yet in `AgentsMd`
-  (missing) — a single pass each direction, no cross-checking beyond
-  directory existence.
+- **sync**: two passes sharing one helper, `reconcile_behaviors(md: &mut
+  AgentsMd, behaviors_dir: &Path) -> Result<(Vec<String>, Vec<String>)>`.
+  The helper mutates `md` in place — drops any entry whose
+  `behaviors_dir.join(&b.name)` isn't a directory (stale, via
+  `md.remove_by_name`), then walks `behaviors_dir` on disk and adds any
+  directory not yet in `AgentsMd` (missing, via `md.add`/
+  `md.contains_path`) — a single pass each direction, no cross-checking
+  beyond directory existence — and returns `(added, removed)` names without
+  printing or saving, so each caller owns its own messaging/persistence.
+  Pass 1 calls it against the shared `AgentsMd`/`~/.agents/behaviors/`
+  exactly as before (byte-identical messages: `Removed stale entry: {name}`
+  / `Added {name} to AGENTS.md`). Pass 2 loops `config.accounts`
+  (`BTreeMap`, alphabetical), and for each one whose `LORE.md` exists
+  (missing `LORE.md` is a `warn`-and-`continue`, not a bail): compares
+  `md.header`'s first line against the canonical `@{agents_md}\n` and
+  restores it on drift, then calls the same helper against
+  `wire::claude_behaviors_path(&claude_dir)` with per-account wording
+  (`Removed stale entry from {name}: {n}` / `Added {name}/{n} to
+  LORE.md`). A `total_changes` counter spans both passes: with more than
+  the default account registered and zero total changes, sync prints one
+  collapsed `✓ Already in sync`; otherwise (including the single-account
+  case, to keep that pre-existing report shape byte-identical) it emits
+  the old granular per-target "already in sync" lines for whichever
+  targets didn't change.
 - **list**: reads both `skills_dir` and `behaviors_dir`, sorted by
   filename, printing target + liveness for symlinks or a
   `(migrated)`/`(built-in)` tag for real directories.
