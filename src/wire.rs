@@ -146,7 +146,11 @@ pub fn wire_claude_skills(skills_dir: &Path, claude_dir: &Path) -> Result<()> {
         }
     }
 
-    output::ok(&format!("Linked {}/skills → {}", claude_dir.display(), skills_dir.display()));
+    output::ok(&format!(
+        "Wired {} as re-links from {}",
+        claude_skills.display(),
+        skills_dir.display()
+    ));
     Ok(())
 }
 
