@@ -55,6 +55,26 @@ impl LoreConfig {
     pub fn account_path(&self, name: &str) -> Option<PathBuf> {
         self.accounts.get(name).map(PathBuf::from)
     }
+
+    pub fn require_account_path(&self, name: &str) -> Result<PathBuf> {
+        self.account_path(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "account '{name}' is not registered — run `lore init --account {name}` first"
+            )
+        })
+    }
+}
+
+pub fn validate_account_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("invalid account name: must not be empty");
+    }
+    if let Some(bad) = name.chars().find(|c| !c.is_ascii_alphanumeric() && *c != '-') {
+        anyhow::bail!(
+            "invalid account name '{name}': only alphanumeric characters and hyphens are allowed (found '{bad}')"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]

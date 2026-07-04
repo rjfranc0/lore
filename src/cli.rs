@@ -18,11 +18,15 @@ pub enum Command {
     Install {
         #[arg(required = true)]
         skills: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
     /// Uninstall skill(s)
     Remove {
         #[arg(required = true)]
         skills: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
     /// Manage behaviors
     Behavior {

@@ -21,10 +21,10 @@ forget.
   different *kind* of account, just the one with no name argument.
 - **Registered** vs. **wired**: an account is *registered* if it has an
   entry in `lore.toml`'s `[accounts]` table. It is *wired* if `CLAUDE.md`,
-  `LORE.md`, and the skills symlink actually exist correctly on disk at
-  that path. These can drift apart (disk state changes without the
-  registry knowing) — `accounts sync` is what reconciles them back
-  together.
+  `LORE.md`, and the skills directory (a real directory, not a symlink —
+  see below) actually exist correctly on disk at that path. These can
+  drift apart (disk state changes without the registry knowing) —
+  `accounts sync` is what reconciles them back together.
 - **`LORE.md`**: a file fully owned by lore, one per Claude account
   (`~/.claude/LORE.md` for `default`, `~/.claude-<name>/LORE.md` for a
   named account). It imports the shared `AGENTS.md` and is the thing
@@ -160,6 +160,15 @@ has content to migrate, that content registers into *this account's own*
 `LORE.md`, never into the shared `AGENTS.md` — a named account's stray
 instructions never leak into every other account's config.
 
+**Per-account skills dir is a real directory, not a symlink**: unlike
+`LORE.md`/`CLAUDE.md`, `~/.claude-<name>/skills/` is created as an actual
+directory holding one re-link per shared skill
+(`~/.claude-<name>/skills/<skill> → ~/.agents/skills/<skill>`). This is
+what makes per-account skill scoping possible — see
+[@/functional/agent-config.md#feature-skill-install--remove] — an
+account-specific symlink can live in that same directory alongside the
+shared re-links, which a single top-level symlink could never hold.
+
 **Acceptance conditions**:
 - Given `--account work` runs twice, when the config is inspected, then
   exactly one `work` entry exists (idempotent registration, not a
@@ -207,8 +216,8 @@ forgetting it *and* wiping its directory would not be.
 
 **What it does**: for every account in the registry, checks whether it's
 actually wired correctly — `CLAUDE.md` imports `LORE.md`, **and** `LORE.md`
-itself imports `AGENTS.md`, **and** the skills symlink exists and resolves
-to a live directory. Any account that fails any of these checks gets fully
+itself imports `AGENTS.md`, **and** the skills path is a real directory
+(not a symlink). Any account that fails any of these checks gets fully
 re-wired via the same path `init` uses (the same surgical CLAUDE.md
 handling, not a shortcut), and the rewire is reported by name. If every
 account was already correct, reports "Accounts already in sync" instead.
@@ -229,8 +238,10 @@ own name.
 - Given an account's `CLAUDE.md` lost its `LORE.md` import line (but the
   file itself still exists), when `accounts sync` runs, then it's rewired
   back to importing `LORE.md`.
-- Given an account's skills symlink is broken (deleted or dangling), when
-  `accounts sync` runs, then it is recreated.
+- Given an account's skills path is missing or has been replaced by a
+  stray symlink (instead of a real directory), when `accounts sync` runs,
+  then it is recreated as a real directory holding re-links to every
+  shared skill.
 - Given every account is already correctly wired (both hops, plus skills),
   when `accounts sync` runs, then nothing is rewritten and it reports as
   such.
@@ -258,5 +269,7 @@ own name.
 
 - More than one `agents_dir` — every account shares exactly one universal
   skills/behaviors tree.
-- Per-account skill or behavior scoping.
+- Per-account **behavior** scoping — behaviors remain purely shared. (Skill
+  scoping is no longer a non-goal — see
+  [@/functional/agent-config.md#feature-skill-install--remove].)
 - Disk cleanup on `accounts remove` — by design, see above.

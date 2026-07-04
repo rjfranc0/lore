@@ -41,9 +41,9 @@ pub fn run() -> ExitCode {
             commands::help::run();
             return ExitCode::SUCCESS;
         }
-        Some(Command::Init { account })       => commands::init::run(account),
-        Some(Command::Install { skills })    => commands::install::run(skills),
-        Some(Command::Remove  { skills })    => commands::remove::run(skills),
+        Some(Command::Init { account })            => commands::init::run(account),
+        Some(Command::Install { skills, account }) => commands::install::run(skills, account),
+        Some(Command::Remove  { skills, account }) => commands::remove::run(skills, account),
         Some(Command::Sync)                  => commands::sync::run(),
         Some(Command::List)                  => commands::list::run(),
         Some(Command::Behavior { action }) => match action {
@@ -68,18 +68,18 @@ pub fn run() -> ExitCode {
 
 const SHORT_HELP: &str = r#"lore — Layered Orchestration for Rules and Extensions
 
-  lore init [--account <name>]        bootstrap ~/.agents + Claude integration
-  lore install <skill> [...]          install skill(s) from current directory
-  lore remove  <skill> [...]          uninstall skill(s)
-  lore behavior add    <name> [...]   add behavior(s) from current directory
-  lore behavior remove <name> [...]   remove behavior(s)
-  lore accounts list                  show registered accounts
-  lore accounts remove <name>         remove an account from the registry
-  lore accounts sync                  re-wire accounts broken on disk
-  lore sync                           reconcile AGENTS.md from disk
-  lore list                           show installed skills and behaviors
-  lore version                        print version
-  lore help                           full manual
+  lore init [--account <name>]                   bootstrap ~/.agents + Claude integration
+  lore install <skill> [...] [--account <name>]  install skill(s) from current directory
+  lore remove  <skill> [...] [--account <name>]  uninstall skill(s)
+  lore behavior add    <name> [...]              add behavior(s) from current directory
+  lore behavior remove <name> [...]              remove behavior(s)
+  lore accounts list                             show registered accounts
+  lore accounts remove <name>                    remove an account from the registry
+  lore accounts sync                             re-wire accounts broken on disk
+  lore sync                                      reconcile AGENTS.md from disk
+  lore list                                      show installed skills and behaviors
+  lore version                                   print version
+  lore help                                      full manual
 
   LORE_CONF   override config file path (default: ~/.config/lore/lore.toml)
 "#;

@@ -18,8 +18,8 @@ pub struct Cli { pub command: Option<Command> }
 
 pub enum Command {
     Init { account: Option<String> },
-    Install { skills: Vec<String> },      // #[arg(required = true)]
-    Remove  { skills: Vec<String> },      // #[arg(required = true)]
+    Install { skills: Vec<String>, account: Option<String> },  // skills: #[arg(required = true)]
+    Remove  { skills: Vec<String>, account: Option<String> },  // skills: #[arg(required = true)]
     Behavior { action: BehaviorAction },
     Accounts { action: AccountsAction },
     Sync,

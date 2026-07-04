@@ -56,8 +56,8 @@ pub fn sync() -> Result<()> {
             && lore_md.exists()
             && std::fs::read_to_string(&lore_md)
                 .is_ok_and(|c| c.lines().any(|l| l.trim() == format!("@{}", p.agents_md.display())))
-            && symlink::is_link(&claude_skills)
-            && symlink::is_live(&claude_skills);
+            && claude_skills.is_dir()
+            && !symlink::is_link(&claude_skills);
 
         if !already_wired {
             let (migration_behaviors_dir, migration_register_md) = if name == "default" {
