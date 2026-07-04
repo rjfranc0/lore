@@ -224,11 +224,14 @@ account was already correct, reports "Accounts already in sync" instead.
 
 **Why**: accounts can break independently of lore (a user deletes a
 `CLAUDE.md` or `LORE.md` by hand, a skills symlink target moves) — `sync`
-is the repair tool, parallel to the original `lore sync` but scoped to
-Claude wiring instead of `AGENTS.md` content. The two `sync` commands are
-intentionally separate (`lore sync` vs. `lore accounts sync`) rather than
-one command with a flag, to keep each one's blast radius obvious from its
-own name.
+is the repair tool, parallel to `lore sync` but scoped to Claude wiring
+(the `CLAUDE.md`/`LORE.md` import chain, the skills directory shape)
+instead of behavior-entry content — `lore sync` owns reconciling entries
+*inside* `AGENTS.md` and every `LORE.md`, see
+[@/functional/agent-config.md#feature-sync-agentsmd--per-account-loremd-reconciliation].
+The two `sync` commands are intentionally separate (`lore sync` vs. `lore
+accounts sync`) rather than one command with a flag, to keep each one's
+blast radius obvious from its own name.
 
 **Acceptance conditions**:
 - Given an account's `CLAUDE.md` is deleted, when `accounts sync` runs, then
@@ -259,7 +262,7 @@ own name.
 |---|---|---|
 | Config at `~/.config/lore/` | `~/.agents/lore.toml` | Neutral ground — `~/.agents/` is agent *data*, not lore's own config; leaves room for a future multi-agents-dir setup |
 | TOML format | JSON, custom | Native fit for the Rust ecosystem, serde-friendly |
-| `accounts sync` separate from `lore sync` | `lore sync --accounts` flag | All account operations live under one noun; `sync` (no namespace) stays AGENTS.md-only |
+| `accounts sync` separate from `lore sync` | `lore sync --accounts` flag | All account operations live under one noun; `sync` (no namespace) keeps its own scope — behavior-entry content in `AGENTS.md`/every `LORE.md` — while `accounts sync` owns Claude wiring (`CLAUDE.md`/`LORE.md` import chain, skills directory shape) |
 | Registry-only on `accounts remove` | Also wipe the account's directory from disk | Consistent with the non-destructive philosophy applied everywhere else in this tool |
 | Clean break removing `AGENTS_DIR`/`CLAUDE_DIR` env vars | Deprecation warnings first | lore is pre-1.0; no installed base to protect from a breaking change |
 | `--account default` unified with the implicit default | Reject `--account default` outright as an error | A silent second untracked directory was strictly worse than either valid option; unification was chosen as the more forgiving of the two |

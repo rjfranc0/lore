@@ -18,7 +18,10 @@ fn creates_symlink_to_skill() {
 
     let link = env.agents_dir.join("skills/my-skill");
     assert!(link.is_symlink());
-    assert_eq!(fs::read_link(&link).unwrap(), src.join("my-skill"));
+    assert_eq!(
+        fs::read_link(&link).unwrap(),
+        src.canonicalize().unwrap().join("my-skill")
+    );
 }
 
 #[test]
