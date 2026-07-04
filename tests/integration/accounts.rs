@@ -12,7 +12,9 @@ fn list_shows_registered_accounts() {
         .assert()
         .success()
         .stdout(predicates::str::contains("default"))
-        .stdout(predicates::str::contains(env.claude_dir.display().to_string()));
+        .stdout(predicates::str::contains(
+            env.claude_dir.display().to_string(),
+        ));
 }
 
 #[test]
@@ -30,11 +32,24 @@ fn list_shows_none_when_accounts_empty() {
 #[test]
 fn init_account_twice_is_idempotent_single_entry() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let config = std::fs::read_to_string(&env.config_path).unwrap();
-    let work_entry = format!("work = \"{}\"", env.home.path().join(".claude-work").display());
+    let work_entry = format!(
+        "work = \"{}\"",
+        env.home.path().join(".claude-work").display()
+    );
     assert_eq!(config.lines().filter(|l| *l == work_entry).count(), 1);
 }
 
@@ -42,8 +57,18 @@ fn init_account_twice_is_idempotent_single_entry() {
 fn two_named_accounts_register_independently() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
-    env.lore().arg("init").arg("--account").arg("personal").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("personal")
+        .assert()
+        .success();
 
     env.lore()
         .arg("accounts")
@@ -113,7 +138,12 @@ fn account_migration_is_idempotent_single_from_claude_block() {
 fn sync_rewires_missing_skills_dir() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_skills = env.home.path().join(".claude-work/skills");
     assert!(work_skills.is_dir() && !work_skills.is_symlink());
@@ -129,7 +159,12 @@ fn sync_rewires_missing_skills_dir() {
 fn sync_rewires_skills_path_replaced_by_stray_symlink() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_skills = env.home.path().join(".claude-work/skills");
     assert!(work_skills.is_dir() && !work_skills.is_symlink());
@@ -146,7 +181,12 @@ fn sync_rewires_skills_path_replaced_by_stray_symlink() {
 fn sync_rewires_claude_md_replaced_by_real_directory() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_md = env.home.path().join(".claude-work/CLAUDE.md");
     assert!(work_md.is_file());
@@ -163,7 +203,12 @@ fn sync_rewires_claude_md_replaced_by_real_directory() {
 fn sync_rewires_claude_md_replaced_by_symlink_to_elsewhere() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_md = env.home.path().join(".claude-work/CLAUDE.md");
     let decoy = env.home.path().join("decoy.txt");
@@ -174,7 +219,10 @@ fn sync_rewires_claude_md_replaced_by_symlink_to_elsewhere() {
 
     env.lore().arg("accounts").arg("sync").assert().success();
 
-    assert!(!work_md.is_symlink(), "CLAUDE.md should be a real file, not a symlink");
+    assert!(
+        !work_md.is_symlink(),
+        "CLAUDE.md should be a real file, not a symlink"
+    );
     let content = std::fs::read_to_string(&work_md).unwrap();
     assert!(content.starts_with('@'));
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "decoy content\n");
@@ -219,8 +267,18 @@ fn sync_rewires_claude_md_missing_lore_import() {
 #[test]
 fn sync_rewires_multiple_broken_accounts() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
-    env.lore().arg("init").arg("--account").arg("personal").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("personal")
+        .assert()
+        .success();
 
     let work_md = env.home.path().join(".claude-work/CLAUDE.md");
     let personal_md = env.home.path().join(".claude-personal/CLAUDE.md");
@@ -243,9 +301,19 @@ fn sync_rewires_multiple_broken_accounts() {
 fn remove_unregisters_account() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
-    env.lore().arg("accounts").arg("remove").arg("work").assert().success();
+    env.lore()
+        .arg("accounts")
+        .arg("remove")
+        .arg("work")
+        .assert()
+        .success();
 
     env.lore()
         .arg("accounts")
@@ -258,12 +326,22 @@ fn remove_unregisters_account() {
 #[test]
 fn remove_does_not_touch_disk() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let claude_md = env.home.path().join(".claude-work/CLAUDE.md");
     assert!(claude_md.is_file());
 
-    env.lore().arg("accounts").arg("remove").arg("work").assert().success();
+    env.lore()
+        .arg("accounts")
+        .arg("remove")
+        .arg("work")
+        .assert()
+        .success();
 
     assert!(claude_md.is_file());
 }
@@ -306,7 +384,12 @@ fn remove_nonexistent_warns_exits_0() {
 fn sync_rewires_broken_account() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let claude_md = env.home.path().join(".claude-work/CLAUDE.md");
     std::fs::remove_file(&claude_md).unwrap();
@@ -333,7 +416,12 @@ fn sync_noop_when_all_wired() {
 #[test]
 fn init_account_invalid_name_exits_1() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("bad name!").assert().failure();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("bad name!")
+        .assert()
+        .failure();
 
     assert!(!env.home.path().join(".claude-bad name!").exists());
     assert!(!env.agents_dir.exists());
@@ -343,7 +431,12 @@ fn init_account_invalid_name_exits_1() {
 fn init_account_empty_name_exits_1() {
     // Expected red — see RJ-54 test report: empty name vacuously passes validation today.
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("").assert().failure();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("")
+        .assert()
+        .failure();
 
     assert!(!env.home.path().join(".claude-").exists());
 }
@@ -351,7 +444,12 @@ fn init_account_empty_name_exits_1() {
 #[test]
 fn init_account_registers_in_config() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let config = std::fs::read_to_string(&env.config_path).unwrap();
     assert!(config.contains("work"));
@@ -362,12 +460,23 @@ fn init_account_registers_in_config() {
 fn init_account_default_is_alias_for_implicit_default() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("default").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("default")
+        .assert()
+        .success();
 
     // Must stay a single registry entry pointing at the original implicit
     // default path — never a second, untracked `~/.claude-default/`.
     let config = std::fs::read_to_string(&env.config_path).unwrap();
-    assert_eq!(config.lines().filter(|l| l.starts_with("default = ")).count(), 1);
+    assert_eq!(
+        config
+            .lines()
+            .filter(|l| l.starts_with("default = "))
+            .count(),
+        1
+    );
     assert!(!env.home.path().join(".claude-default").exists());
 }
 
@@ -375,7 +484,12 @@ fn init_account_default_is_alias_for_implicit_default() {
 fn two_accounts_isolated() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_dir = env.home.path().join(".claude-work");
     let work_lore_md = work_dir.join("LORE.md");

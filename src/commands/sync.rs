@@ -1,5 +1,9 @@
+use crate::{
+    agents_md::{AgentsMd, behavior_entry},
+    output,
+    paths::Paths,
+};
 use anyhow::Result;
-use crate::{agents_md::{AgentsMd, behavior_entry}, output, paths::Paths};
 
 pub fn run() -> Result<()> {
     let p = Paths::load()?;
@@ -11,7 +15,9 @@ pub fn run() -> Result<()> {
     let mut removed = 0usize;
 
     // Remove stale entries (in AGENTS.md but dir gone from disk)
-    let stale: Vec<String> = md.behaviors.iter()
+    let stale: Vec<String> = md
+        .behaviors
+        .iter()
         .filter(|b| !p.behaviors_dir.join(&b.name).is_dir())
         .map(|b| b.name.clone())
         .collect();
@@ -29,7 +35,9 @@ pub fn run() -> Result<()> {
         entries.sort_by_key(|e| e.file_name());
         for entry in entries {
             let path = entry.path();
-            if !path.is_dir() { continue; }
+            if !path.is_dir() {
+                continue;
+            }
             if let Ok(ep) = behavior_entry(&path)
                 && !md.contains_path(&ep)
             {

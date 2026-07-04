@@ -24,6 +24,11 @@ impl Paths {
         let behaviors_dir = agents_dir.join("behaviors");
         let agents_md = agents_dir.join("AGENTS.md");
 
-        Self { agents_dir, skills_dir, behaviors_dir, agents_md }
+        Self {
+            agents_dir,
+            skills_dir,
+            behaviors_dir,
+            agents_md,
+        }
     }
 }
