@@ -156,7 +156,11 @@ into one account: `create_dir_all`s the account's skills dir defensively,
 then creates `claude_dir/skills/<name> → skills_dir/<name>` only if
 nothing is already linked there. Create-if-absent, never overwrite — this
 is what makes both `wire_claude_skills`'s full re-link loop and a single
-`install` call safe to run repeatedly.
+`install` call safe to run repeatedly. If a non-symlink entry already
+occupies that path — manual tampering, since lore itself never places one
+there post-init — `relink_skill` warns (naming the skill and the account's
+skills path) and skips rather than letting the raw `EEXIST` from
+`symlink::create` fail the whole fan-out over one account's collision.
 
 **`unlink_account_skill(claude_dir, name)`** removes one account's link
 for `name` if a symlink is present there, silently no-op if not — used by
