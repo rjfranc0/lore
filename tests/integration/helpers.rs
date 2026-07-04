@@ -80,7 +80,12 @@ impl Env {
 
     /// Registers a named account via `lore init --account <name>`.
     pub fn register_account(&self, name: &str) {
-        self.lore().arg("init").arg("--account").arg(name).assert().success();
+        self.lore()
+            .arg("init")
+            .arg("--account")
+            .arg(name)
+            .assert()
+            .success();
     }
 
     pub fn account_skills(&self, name: &str) -> PathBuf {

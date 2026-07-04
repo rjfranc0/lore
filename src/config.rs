@@ -74,7 +74,10 @@ pub fn validate_account_name(name: &str) -> Result<()> {
     if name.is_empty() {
         anyhow::bail!("invalid account name: must not be empty");
     }
-    if let Some(bad) = name.chars().find(|c| !c.is_ascii_alphanumeric() && *c != '-') {
+    if let Some(bad) = name
+        .chars()
+        .find(|c| !c.is_ascii_alphanumeric() && *c != '-')
+    {
         anyhow::bail!(
             "invalid account name '{name}': only alphanumeric characters and hyphens are allowed (found '{bad}')"
         );

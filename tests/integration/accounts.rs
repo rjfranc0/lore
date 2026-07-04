@@ -86,7 +86,12 @@ fn two_named_accounts_register_independently() {
 #[test]
 fn named_account_creates_own_lore_md_importing_shared_agents_md() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_lore_md = env.home.path().join(".claude-work/LORE.md");
     assert!(work_lore_md.is_file());
@@ -101,11 +106,20 @@ fn account_migration_registers_in_own_lore_md_not_shared_agents_md() {
     std::fs::create_dir_all(&work_dir).unwrap();
     std::fs::write(work_dir.join("CLAUDE.md"), "# work notes\nbe nice\n").unwrap();
 
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let rules = work_dir.join("behaviors/from-claude/RULES.md");
     assert!(rules.is_file());
-    assert!(std::fs::read_to_string(&rules).unwrap().contains("work notes"));
+    assert!(
+        std::fs::read_to_string(&rules)
+            .unwrap()
+            .contains("work notes")
+    );
 
     let work_lore_md = std::fs::read_to_string(work_dir.join("LORE.md")).unwrap();
     assert!(work_lore_md.contains("from-claude"));
@@ -122,16 +136,32 @@ fn account_migration_is_idempotent_single_from_claude_block() {
     std::fs::create_dir_all(&work_dir).unwrap();
     std::fs::write(work_dir.join("CLAUDE.md"), "# work notes\nbe nice\n").unwrap();
 
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
     let claude_md_after_first = std::fs::read_to_string(work_dir.join("CLAUDE.md")).unwrap();
 
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
     let claude_md_after_second = std::fs::read_to_string(work_dir.join("CLAUDE.md")).unwrap();
 
     assert_eq!(claude_md_after_first, claude_md_after_second);
 
     let work_lore_md = std::fs::read_to_string(work_dir.join("LORE.md")).unwrap();
-    assert_eq!(work_lore_md.lines().filter(|l| l.trim() == "<!-- from-claude -->").count(), 1);
+    assert_eq!(
+        work_lore_md
+            .lines()
+            .filter(|l| l.trim() == "<!-- from-claude -->")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -231,7 +261,12 @@ fn sync_rewires_claude_md_replaced_by_symlink_to_elsewhere() {
 #[test]
 fn sync_recreates_deleted_lore_md() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_lore_md = env.home.path().join(".claude-work/LORE.md");
     std::fs::remove_file(&work_lore_md).unwrap();
@@ -252,7 +287,12 @@ fn sync_recreates_deleted_lore_md() {
 #[test]
 fn sync_rewires_claude_md_missing_lore_import() {
     let env = Env::new();
-    env.lore().arg("init").arg("--account").arg("work").assert().success();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
 
     let work_md = env.home.path().join(".claude-work/CLAUDE.md");
     std::fs::write(&work_md, "").unwrap();
