@@ -125,22 +125,27 @@ only the thin `run()` wrapper touches that I/O. From there:
   `my-skill/` and a hand-typed `my-skill` resolve to the same path.
 - **behavior add/remove**: like install/remove, each takes an `account:
   Option<String>` and dispatches — `add`/`remove` are thin wrappers that
-  branch to `add_shared`/`remove_shared` (the original, untouched bodies)
-  or `add_scoped`/`remove_scoped`. **Shared** (`None`): symlinks into
-  `~/.agents/behaviors/`, loads/mutates/saves `AGENTS.md`. **Scoped**
-  (`Some(name)`): resolves `name` via `LoreConfig::require_account_path`,
-  guards on that account's `LORE.md` already existing (bailing with a
-  `lore init --account <name>` pointer if not), symlinks into
-  `wire::claude_behaviors_path(&claude_dir)` instead of the shared
-  `behaviors_dir`, and loads/mutates/saves that account's own `LORE.md`
-  (also an `AgentsMd`, see [@/implementation/accounts.md#module-wirers])
-  instead of `AGENTS.md` — the shared tree is never touched by a scoped
-  call. `remove` (both variants) additionally distinguishes a symlinked
-  behavior (removable) from a real directory (`is_link` false but
-  `path.is_dir()` true) — that's the built-in-behavior protection described
-  in [@/functional/agent-config.md#feature-behavior-add--remove]; the
-  scoped variant's warning names that account's `LORE.md` path instead of
-  the shared `AGENTS.md`.
+  branch to `add_shared`/`add_scoped` or `remove_shared`/`remove_scoped`.
+  Those four are themselves thin: each resolves its own `behaviors_dir`
+  and markdown-file path (`~/.agents/behaviors/` + `AGENTS.md` for shared;
+  `wire::claude_behaviors_path(&claude_dir)` + that account's `LORE.md`
+  for scoped, after resolving `name` via `LoreConfig::require_account_path`
+  and guarding on the account's `LORE.md` already existing — bailing with
+  a `lore init --account <name>` pointer if not) and hand off to one
+  shared implementation: `link_and_register` (symlink-create/register,
+  used by both add paths) and `unlink_and_deregister` (symlink-remove/
+  deregister, used by both remove paths), parameterized over that
+  directory/markdown-file pair plus a label or not-installed-message
+  closure for the shared-vs-scoped wording difference — so the actual
+  link+register / unlink+deregister business rule lives in exactly one
+  place regardless of which tree it targets. The shared tree is never
+  touched by a scoped call, and vice versa. `unlink_and_deregister`
+  additionally distinguishes a symlinked behavior (removable) from a real
+  directory (`is_link` false but `path.is_dir()` true) — that's the
+  built-in-behavior protection described in
+  [@/functional/agent-config.md#feature-behavior-add--remove]; the scoped
+  call's warning names that account's `LORE.md` path instead of the
+  shared `AGENTS.md`.
 - **sync**: walks `AgentsMd.behaviors`, drops any entry whose
   `behaviors_dir.join(&b.name)` isn't a directory (stale), then walks
   `behaviors_dir` on disk and adds any directory not yet in `AgentsMd`
