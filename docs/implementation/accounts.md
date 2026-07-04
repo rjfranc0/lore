@@ -40,6 +40,19 @@ itself) without a separate sort step.
   `None` for an unregistered name; callers (see `init.rs` below) decide
   what `None` means in context — `config.rs` itself has no opinion on
   fallback behavior.
+- `require_account_path(name)` — thin wrapper around `account_path` that
+  turns `None` into a contextual `Err` naming the exact fix (`lore init
+  --account <name>`) instead of leaving each caller to invent its own
+  message. Used by every `--account`-scoped command (`install`, `remove`)
+  so the error text is identical regardless of which command hit the
+  unregistered name.
+
+**`validate_account_name(name)`** (free function, not a `LoreConfig`
+method — it runs before any config is loaded): non-empty,
+alphanumeric-or-hyphen only. Extracted so `init`, `install --account`, and
+`remove --account` share one rejection rule instead of three copies
+drifting independently — see `commands/init.rs` below for the original
+call site this was lifted from.
 
 ## Module: `paths.rs`
 
@@ -79,6 +92,8 @@ pub fn wire_lore_md(agents_md: &Path, claude_dir: &Path) -> Result<PathBuf>
 pub fn wire_claude_md(claude_dir: &Path, agents_md: &Path,
                        migration_behaviors_dir: &Path, migration_register_md: &Path) -> Result<()>
 pub fn wire_claude_skills(skills_dir: &Path, claude_dir: &Path) -> Result<()>
+pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<()>
+pub fn unlink_account_skill(claude_dir: &Path, name: &str) -> Result<()>
 pub fn wire_claude_dir(agents_md: &Path, skills_dir: &Path, claude_dir: &Path,
                         migration_behaviors_dir: &Path, migration_register_md: &Path) -> Result<()>
 ```
@@ -126,10 +141,33 @@ it's wiring. For the default account the caller passes the shared
 passes that account's own `<claude_dir>/behaviors/` and that account's own
 `LORE.md` — see `commands/init.rs` below for where that split happens.
 
-`wire_claude_skills` is the skills-symlink half, unchanged from before this
-file split it out of `wire_claude_dir`: clear whatever currently sits at
-`claude_dir/skills` (symlink, directory, or plain file) and create a fresh
-symlink to `skills_dir`.
+**`wire_claude_skills` produces a real directory, not a symlink** — this
+changed from the original single-symlink model (see
+[@/functional/accounts.md#feature-lore-init---account-name]): it removes a
+stale legacy symlink if one sits at `claude_dir/skills` (the old model),
+`create_dir_all`s the directory, then re-links every entry currently in
+`skills_dir` into it via `relink_skill`. It never wipes the directory on a
+re-run — any account-specific symlink already living there (from a scoped
+`install --account`) survives every subsequent `init`/`sync` call, because
+the directory is only ever added to, never rebuilt from scratch.
+
+**`relink_skill(skills_dir, claude_dir, name)`** re-links one shared skill
+into one account: `create_dir_all`s the account's skills dir defensively,
+then creates `claude_dir/skills/<name> → skills_dir/<name>` only if
+nothing is already linked there. Create-if-absent, never overwrite — this
+is what makes both `wire_claude_skills`'s full re-link loop and a single
+`install` call safe to run repeatedly.
+
+**`unlink_account_skill(claude_dir, name)`** removes one account's link
+for `name` if a symlink is present there, silently no-op if not — used by
+`remove` (shared path) to fan out the un-link across every registered
+account without needing to know in advance which accounts actually have
+that skill linked.
+
+Both functions are re-link **primitives** — `install`/`remove` (see
+[@/implementation/agent-config.md#commands-built-on-these-primitives]) are
+the callers that decide *which* accounts to loop over and whether the
+operation is shared or scoped to one name.
 
 `wire_claude_dir` is the orchestrator, in a fixed order:
 `create_dir_all(claude_dir)` → `wire_lore_md` → `wire_claude_md` →
@@ -154,11 +192,14 @@ if this is touched," below.
 given invocation targets, runs the migration logic, and triggers
 registration.
 
-**Validate before any disk I/O**: account name validation (non-empty,
-alphanumeric-or-hyphen only) happens before `LoreConfig` is even loaded.
-This ordering is itself the contract, not just a nice-to-have — a name
-that's about to be rejected must leave zero trace (no directory, no
-registry entry, no partial config write).
+**Validate before any disk I/O**: account name validation happens before
+`LoreConfig` is even loaded, via the shared `config::validate_account_name`
+free function (see [@/implementation/accounts.md#module-configrs]) — the
+same rule `install --account`/`remove --account` enforce, extracted here so
+all three call sites reject an invalid name identically instead of
+maintaining separate copies. This ordering is itself the contract, not just
+a nice-to-have — a name that's about to be rejected must leave zero trace
+(no directory, no registry entry, no partial config write).
 
 **`claude_dir` resolution**:
 ```rust
@@ -200,14 +241,22 @@ in, keyed on `account_name == "default"`: the shared `p.behaviors_dir` /
 one. This split is what keeps a named account's migrated instructions from
 ever touching the shared `AGENTS.md`.
 
-**Skill migration collision**: while moving real (non-symlinked) skill
-directories out of `claude_skills` into `skills_dir`, any name that already
-exists at the destination is left in place at the source, warned about, and
-flagged via a `collision` bool. After the loop, if `collision` is true
-**and** the source directory still has unmoved entries, the whole command
-bails — after attempting every movable skill (partial progress is
-preserved and reported) but before wiring `CLAUDE.md` (the command never
-finishes "successfully" with conflicts still unresolved).
+**Skill migration collision**: while iterating `claude_skills`'s entries,
+symlinks are skipped outright (`continue`) — only **real** (non-symlinked)
+directories are candidates for migration into `skills_dir`. This is what
+keeps a previous `init` run's re-links (or a scoped account-specific
+symlink) untouched on every re-run: the loop only ever moves genuinely
+pre-lore, unmanaged directories. Among the remaining real-directory
+candidates, any name that already exists at the destination is left in
+place at the source, warned about, and flagged via a `collision` bool.
+After the loop, if `collision` is true the whole command bails — after
+attempting every movable skill (partial progress is preserved and
+reported) but before wiring `CLAUDE.md` (the command never finishes
+"successfully" with conflicts still unresolved). The `claude_skills`
+directory itself is never removed at the end of this step — unlike the
+pre-this-feature behavior, it is now permanent infrastructure (see
+`wire_claude_skills` above), not a symlink target to be cleared and
+replaced.
 
 > ⚠️ **Inferred:** the ordering itself is read directly from the code; that
 > it's *deliberate* is not — there's no comment explaining why the bail
@@ -233,9 +282,9 @@ not error) for an unregistered name or for `"default"` specifically, but
 performs the removal either way for `"default"` (the warning is
 informational, not a refusal).
 
-**`sync`** — for each registered account, the wiring check now verifies
-*two* hops instead of one: CLAUDE.md must import LORE.md, **and** LORE.md
-must import AGENTS.md, in addition to the unchanged skills-symlink checks:
+**`sync`** — for each registered account, the wiring check verifies *two*
+hops for CLAUDE.md/LORE.md, plus a skills check that flipped polarity with
+this feature's real-directory model:
 ```rust
 let already_wired = claude_md.exists()
     && std::fs::read_to_string(&claude_md)
@@ -243,20 +292,30 @@ let already_wired = claude_md.exists()
     && lore_md.exists()
     && std::fs::read_to_string(&lore_md)
         .is_ok_and(|c| c.lines().any(|l| l.trim() == format!("@{}", agents_md.display())))
-    && symlink::is_link(&claude_skills)
-    && symlink::is_live(&claude_skills);
+    && claude_skills.is_dir()
+    && !symlink::is_link(&claude_skills);
 ```
-**A read failure on either file (permission denied, non-UTF-8 content)
-folds into `false` via `is_ok_and`** — treated identically to "wrong
-content," not surfaced as a distinct error. This is deliberate, for the
-same reason as before the two-hop check was added: `sync`'s whole purpose
-is self-healing, so routing every form of "not correct" through the same
-`wire_claude_dir` rewrite path (rather than carving out a separate branch
-for unreadable-but-possibly-fixable files) keeps the function's logic to
-one path instead of two. If `wire_claude_dir` itself then fails (e.g.
-genuine permission denial on write), that error still propagates normally
-— only the *read* used for the "is it already correct" check is
-swallowed, not the *write* used to fix it.
+**The skills check used to require a *live symlink*; it now requires the
+opposite — a real directory that is *not* a symlink.** This mirrors
+`wire_claude_skills`'s shape change (see
+[@/implementation/accounts.md#module-wirers] above): a symlink sitting at
+`claude_dir/skills` is now the **broken** state (the legacy single-symlink
+model), not the correct one. This check is shape-only — it confirms the
+directory exists and isn't a stray symlink, not that every shared skill's
+re-link is actually present inside it; deep re-link reconciliation is
+separate, tracked future work.
+
+**A read failure on either CLAUDE.md or LORE.md (permission denied,
+non-UTF-8 content) folds into `false` via `is_ok_and`** — treated
+identically to "wrong content," not surfaced as a distinct error. This is
+deliberate: `sync`'s whole purpose is self-healing, so routing every form
+of "not correct" through the same `wire_claude_dir` rewrite path (rather
+than carving out a separate branch for unreadable-but-possibly-fixable
+files) keeps the function's logic to one path instead of two. If
+`wire_claude_dir` itself then fails (e.g. genuine permission denial on
+write), that error still propagates normally — only the *read* used for
+the "is it already correct" check is swallowed, not the *write* used to
+fix it.
 
 If not already wired, `sync` computes the same migration-target tuple
 `init.rs` does (keyed on `name == "default"`) before calling
@@ -280,3 +339,8 @@ same surgical CLAUDE.md handling `init` does, never a separate code path.
   breaks every case that writes a `@{lore_md}` line — `LORE.md` wouldn't
   exist yet at the path being named, and a Case-3 migration for a named
   account would have nothing to register into.
+- Reverting `wire_claude_skills` back to a single symlink (instead of a
+  real directory of re-links) breaks per-account skill scoping outright —
+  there would be nowhere for an account-specific symlink to live alongside
+  the shared re-links. It would also desync `accounts sync`'s wired-check,
+  which now explicitly expects a real, non-symlinked directory.

@@ -11,8 +11,10 @@ session start.
 
 - **Skill**: a self-contained capability directory (expected to contain a
   `SKILL.md`) that an agent loads on demand. lore never copies a skill's
-  contents — it only manages a symlink at `~/.agents/skills/<name>` pointing
-  at the skill's real location in some repo.
+  contents — it only manages a symlink, either shared
+  (`~/.agents/skills/<name>`, re-linked into every account) or scoped to
+  one account (`~/.claude-<account>/skills/<name>` directly), pointing at
+  the skill's real location in some repo.
 - **Behavior**: a directory of standing instructions (an entry `.md` file —
   see resolution order below) that an agent should load at the *start of
   every session*, not on demand. The distinction from a skill is exactly
@@ -29,31 +31,70 @@ session start.
 ## Feature: skill install / remove
 
 **What it does**: `lore install <skill> [...]` (run from inside a repo
-containing skill directories) creates a symlink
-`~/.agents/skills/<skill> → $PWD/<skill>` for each name given. `lore remove
-<skill> [...]` deletes that symlink only — the source directory in its repo
-is never touched.
+containing skill directories) installs each name either **shared**
+(default, no flag) or **scoped to one Claude account** (`--account
+<name>`):
 
-**Why**: skills should be usable across every agent/tool without copying
-files into N different config directories, and should stay perfectly in sync
-with their source repo (pull the repo, the skill updates — no separate
-"update" step needed for content changes, see Non-goals).
+- **Shared** (no `--account`): creates
+  `~/.agents/skills/<skill> → $PWD/<skill>`, then re-links that same skill
+  into every registered account's `~/.claude-<account>/skills/<skill>` (a
+  re-link, not a fresh symlink to `$PWD` — see
+  [@/functional/accounts.md#feature-lore-init---account-name] for why the
+  account skills dir can hold both kinds side by side).
+- **Scoped** (`--account <name>`): creates
+  `~/.claude-<name>/skills/<skill> → $PWD/<skill>` directly, in that one
+  account only — `~/.agents/skills/` and every other account are left
+  completely untouched.
+
+`lore remove <skill> [...]` mirrors this: shared remove deletes the shared
+symlink and the re-link from every registered account; `--account <name>`
+remove deletes only that one account's link. Source directories in their
+repos are never touched, either way.
+
+**Why**: the same skill (a shell utility, a domain-specific agent skill)
+often needs to be visible everywhere, but some skills only make sense for
+one identity (e.g. a work-only tool) — shared-by-default with an opt-in
+account scope covers both without a second command. Skills should stay in
+sync with their source repo (pull the repo, the skill updates — no
+separate "update" step needed for content changes, see Non-goals).
+
+**`--account` targets must already be registered**: `lore install --account
+ghost <skill>` (an account never wired via `lore init --account ghost`)
+fails with an actionable error and creates nothing — an unregistered name
+is treated as a likely typo, not an implicit "wire it now."
+
+**The `default` account is never implicit**: `lore install --account
+default <skill>` scopes to `~/.claude/skills/` only, exactly like any other
+named account — it does not fall back to the shared, all-accounts behavior
+just because its target happens to be the same directory `init` (no flag)
+also wires. Only omitting `--account` entirely triggers the shared
+behavior.
 
 **Acceptance conditions**:
 - Given a directory `<skill>/` exists in `$PWD`, when `lore install <skill>`
-  runs, then `~/.agents/skills/<skill>` exists as a symlink to
-  `$PWD/<skill>`.
-- Given `<skill>` is already installed (symlink exists), when `lore install
-  <skill>` runs again, then lore does not overwrite it — it warns and shows
-  both the existing target and the attempted one, so a name collision
-  between two different source repos is visible rather than silently
+  runs (no `--account`), then `~/.agents/skills/<skill>` exists as a symlink
+  to `$PWD/<skill>`, **and** every registered account's
+  `~/.claude-<account>/skills/<skill>` exists as a re-link resolving to the
+  same target.
+- Given `--account work` and a registered `work` account, when `lore
+  install --account work <skill>` runs, then only
+  `~/.claude-work/skills/<skill>` is created — `~/.agents/skills/` and
+  every other account are unaffected.
+- Given `<skill>` is already installed at the targeted scope (shared or a
+  specific account), when `lore install` runs again, then lore does not
+  overwrite it — it warns and shows both the existing target and the
+  attempted one, so a name collision is visible rather than silently
   resolved.
-- Given `<skill>` is not installed, when `lore remove <skill>` runs, then
-  lore warns "`<skill>` is not installed" and exits 0 (removal of a
-  non-existent thing is not an error).
+- Given `<skill>` is not installed at the targeted scope, when `lore
+  remove` runs, then lore warns it isn't installed (naming the account for
+  a scoped remove) and exits 0 (removal of a non-existent thing is not an
+  error).
 - A trailing slash on the name (`lore install my-skill/`, common from shell
-  tab-completion) is stripped before use — `my-skill` and `my-skill/` are
-  the same skill.
+  tab-completion) is stripped before use, for both the shared and
+  `--account` paths.
+- No registered accounts exist yet: a shared install/remove only touches
+  `~/.agents/skills/` — the account fan-out loop is simply empty, not an
+  error.
 
 **Example** (name collision across two source repos — verified against the
 built binary):
@@ -65,7 +106,9 @@ built binary):
 
 **Out of scope**: lore does not validate the *contents* of a skill directory
 (e.g. that `SKILL.md` exists) at install time — `lore list` is the only
-place a broken symlink becomes visible.
+place a broken symlink becomes visible. `list` also does not yet
+distinguish shared skills from per-account ones — that's separate, tracked
+future work; this feature only changes what `install`/`remove` do.
 
 ## Feature: behavior add / remove
 
@@ -191,6 +234,7 @@ Behaviors:
   never pull or sync repo contents. A planned `lore update` (re-linking
   after a repo moves on disk — i.e. the symlink target path changed, not its
   content) is tracked as future work, not yet implemented.
-- No per-account skill or behavior scoping — every Claude account wired by
-  `init` shares the exact same `~/.agents/skills/` and `behaviors/`. See
-  [@/functional/accounts.md] for what *does* vary per account.
+- No per-account **behavior** scoping — every Claude account shares the
+  exact same `~/.agents/behaviors/`; only skills can be scoped per account
+  (see the install/remove feature above). See [@/functional/accounts.md]
+  for what else varies per account.

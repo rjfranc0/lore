@@ -102,10 +102,19 @@ start with `Paths::load()` (see
 config layer, not this one, since it has to know about `LoreConfig` to
 resolve `agents_dir`). From there:
 
-- **install/remove** (skills): thin wrappers directly over
-  `symlink::create`/`is_link` plus a trailing-slash strip
-  (`name.trim_end_matches('/')`) so tab-completion's `my-skill/` and a
-  hand-typed `my-skill` resolve to the same path.
+- **install/remove** (skills): each takes an `account: Option<String>` and
+  branches on it. **Shared** (`None`): the original thin
+  `symlink::create`/`is_link` logic against `~/.agents/skills/`, plus a
+  fan-out loop over every registered account calling
+  `wire::relink_skill`/`unlink_account_skill` (see
+  [@/implementation/accounts.md#module-wirers]) so the same install/remove
+  reaches every account in one command. **Scoped** (`Some(name)`): resolves
+  `name` via `LoreConfig::require_account_path` (bailing if unregistered)
+  and applies the same symlink-create/remove logic directly against that
+  one account's skills dir instead of the shared one — `~/.agents/skills/`
+  and every other account are never touched. Both paths share the
+  trailing-slash strip (`name.trim_end_matches('/')`) so tab-completion's
+  `my-skill/` and a hand-typed `my-skill` resolve to the same path.
 - **behavior add/remove**: the same symlink operations, plus
   loading/mutating/saving an `AgentsMd` for the `@import` bookkeeping.
   `remove` additionally distinguishes a symlinked behavior (removable) from
