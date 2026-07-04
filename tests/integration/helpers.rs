@@ -91,6 +91,14 @@ impl Env {
     pub fn account_skills(&self, name: &str) -> PathBuf {
         self.home.path().join(format!(".claude-{name}/skills"))
     }
+
+    pub fn account_behaviors(&self, name: &str) -> PathBuf {
+        self.home.path().join(format!(".claude-{name}/behaviors"))
+    }
+
+    pub fn account_lore_md(&self, name: &str) -> PathBuf {
+        self.home.path().join(format!(".claude-{name}/LORE.md"))
+    }
 }
 
 pub fn make_skill(base: &Path, name: &str) -> PathBuf {
