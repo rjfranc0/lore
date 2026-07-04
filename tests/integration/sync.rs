@@ -64,7 +64,7 @@ fn no_op_when_already_in_sync() {
         .arg("sync")
         .assert()
         .success()
-        .stdout(predicates::str::contains("already in sync"));
+        .stdout(predicates::str::contains("Already in sync"));
 
     let agents_md = fs::read_to_string(env.agents_md()).unwrap();
     assert_eq!(agents_md.matches("<!-- steady -->").count(), 1);
