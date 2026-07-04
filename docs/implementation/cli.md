@@ -29,7 +29,10 @@ pub enum Command {
     Help,
 }
 
-pub enum BehaviorAction { Add { names: Vec<String> }, Remove { names: Vec<String> } }
+pub enum BehaviorAction {
+    Add    { names: Vec<String>, account: Option<String> },
+    Remove { names: Vec<String>, account: Option<String> },
+}
 pub enum AccountsAction { List, Remove { name: String }, Sync }
 ```
 

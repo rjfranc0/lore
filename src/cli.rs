@@ -67,11 +67,15 @@ pub enum BehaviorAction {
     Add {
         #[arg(required = true)]
         names: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
     /// Remove behavior(s)
     Remove {
         #[arg(required = true)]
         names: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
 }
 

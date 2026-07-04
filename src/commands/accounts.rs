@@ -51,11 +51,15 @@ pub fn sync() -> Result<()> {
         // wired" deliberately — sync is self-healing, so any unreadable state
         // routes through the same rewire path below rather than needing its own branch.
         let already_wired = claude_md.exists()
-            && std::fs::read_to_string(&claude_md)
-                .is_ok_and(|c| c.lines().any(|l| l.trim() == format!("@{}", lore_md.display())))
+            && std::fs::read_to_string(&claude_md).is_ok_and(|c| {
+                c.lines()
+                    .any(|l| l.trim() == format!("@{}", lore_md.display()))
+            })
             && lore_md.exists()
-            && std::fs::read_to_string(&lore_md)
-                .is_ok_and(|c| c.lines().any(|l| l.trim() == format!("@{}", p.agents_md.display())))
+            && std::fs::read_to_string(&lore_md).is_ok_and(|c| {
+                c.lines()
+                    .any(|l| l.trim() == format!("@{}", p.agents_md.display()))
+            })
             && claude_skills.is_dir()
             && !symlink::is_link(&claude_skills);
 
@@ -63,7 +67,10 @@ pub fn sync() -> Result<()> {
             let (migration_behaviors_dir, migration_register_md) = if name == "default" {
                 (p.behaviors_dir.clone(), p.agents_md.clone())
             } else {
-                (claude_dir.join("behaviors"), wire::lore_md_path(&claude_dir))
+                (
+                    claude_dir.join("behaviors"),
+                    wire::lore_md_path(&claude_dir),
+                )
             };
             wire::wire_claude_dir(
                 &p.agents_md,
@@ -72,7 +79,10 @@ pub fn sync() -> Result<()> {
                 &migration_behaviors_dir,
                 &migration_register_md,
             )?;
-            output::ok(&format!("Re-wired account: {name} → {}", claude_dir.display()));
+            output::ok(&format!(
+                "Re-wired account: {name} → {}",
+                claude_dir.display()
+            ));
             rewired += 1;
         }
     }
