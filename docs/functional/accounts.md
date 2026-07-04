@@ -268,8 +268,10 @@ own name.
 ## Non-goals (this domain)
 
 - More than one `agents_dir` — every account shares exactly one universal
-  skills/behaviors tree.
-- Per-account **behavior** scoping — behaviors remain purely shared. (Skill
-  scoping is no longer a non-goal — see
-  [@/functional/agent-config.md#feature-skill-install--remove].)
+  skills/behaviors tree (behaviors/skills *can* be scoped per account, but
+  there's still only one underlying tree they're symlinked from).
 - Disk cleanup on `accounts remove` — by design, see above.
+
+Both skill scoping and behavior scoping are no longer non-goals — see
+[@/functional/agent-config.md#feature-skill-install--remove] and
+[@/functional/agent-config.md#feature-behavior-add--remove].

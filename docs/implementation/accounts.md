@@ -84,9 +84,10 @@ re-derives them.
 Claude config directory, and the only place that actually writes one.
 
 ```rust
-pub fn claude_md_path(claude_dir: &Path) -> PathBuf       // claude_dir.join("CLAUDE.md")
-pub fn lore_md_path(claude_dir: &Path) -> PathBuf          // claude_dir.join("LORE.md")
-pub fn claude_skills_path(claude_dir: &Path) -> PathBuf    // claude_dir.join("skills")
+pub fn claude_md_path(claude_dir: &Path) -> PathBuf        // claude_dir.join("CLAUDE.md")
+pub fn lore_md_path(claude_dir: &Path) -> PathBuf           // claude_dir.join("LORE.md")
+pub fn claude_skills_path(claude_dir: &Path) -> PathBuf     // claude_dir.join("skills")
+pub fn claude_behaviors_path(claude_dir: &Path) -> PathBuf  // claude_dir.join("behaviors")
 
 pub fn wire_lore_md(agents_md: &Path, claude_dir: &Path) -> Result<PathBuf>
 pub fn wire_claude_md(claude_dir: &Path, agents_md: &Path,
@@ -180,15 +181,20 @@ before `wire_claude_md` runs, because cases 1/2/4 above all write a line
 that names it, and a Case-3 migration for a named account also registers
 into that same freshly-ensured `LORE.md`.
 
-**`claude_md_path`/`lore_md_path`/`claude_skills_path` exist as the single
-source of truth for those joins** — every caller that needs to know where
-a Claude account's `CLAUDE.md`, `LORE.md`, or skills symlink lives
-(`init.rs`, `accounts::sync`, and `wire.rs` itself) calls through these
-three functions rather than independently writing `claude_dir.join(...)`.
-This was a deliberate de-duplication: the layout rule used to be computed
-in multiple places independently, which is a correctness risk (multiple
-places to keep in sync, not just lines to keep short) — see "What breaks
-if this is touched," below.
+**`claude_md_path`/`lore_md_path`/`claude_skills_path`/`claude_behaviors_path`
+exist as the single source of truth for those joins** — every caller that
+needs to know where a Claude account's `CLAUDE.md`, `LORE.md`, skills
+symlink, or scoped-behaviors directory lives (`init.rs`, `accounts::sync`,
+`commands/behavior.rs`'s scoped `add`/`remove`, and `wire.rs` itself) calls
+through these four functions rather than independently writing
+`claude_dir.join(...)`. This was a deliberate de-duplication: the layout
+rule used to be computed in multiple places independently, which is a
+correctness risk (multiple places to keep in sync, not just lines to keep
+short) — see "What breaks if this is touched," below.
+`claude_behaviors_path` was added alongside `commands/behavior.rs`'s scoped
+`add_scoped`/`remove_scoped`, replacing an inline `claude_dir.join("behaviors")`
+that `init.rs`'s migration-target tuple used to compute independently
+(see `commands/init.rs` below).
 
 ## Module: `commands/init.rs`
 
@@ -328,11 +334,11 @@ same surgical CLAUDE.md handling `init` does, never a separate code path.
 
 ## What breaks if this is touched
 
-- Reverting the `claude_md_path`/`claude_skills_path` centralization (going
-  back to inline `.join(...)` calls in `init.rs`/`accounts.rs`)
-  reintroduces the duplicated-knowledge risk these helpers were added to
-  close — a future layout change would again need to be applied in three
-  places by hand.
+- Reverting the `claude_md_path`/`claude_skills_path`/`claude_behaviors_path`
+  centralization (going back to inline `.join(...)` calls in
+  `init.rs`/`accounts.rs`/`commands/behavior.rs`) reintroduces the
+  duplicated-knowledge risk these helpers were added to close — a future
+  layout change would again need to be applied in multiple places by hand.
 - Changing `init.rs`'s branch back to `account.is_some()` reintroduces the
   `--account default` collision: a fully-wired, registry-invisible
   `~/.claude-default/` directory.
