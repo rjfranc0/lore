@@ -19,6 +19,11 @@ pub fn claude_skills_path(claude_dir: &Path) -> PathBuf {
     claude_dir.join("skills")
 }
 
+/// Single source of truth for where account-scoped behaviors live under a Claude dir.
+pub fn claude_behaviors_path(claude_dir: &Path) -> PathBuf {
+    claude_dir.join("behaviors")
+}
+
 /// Creates or updates LORE.md so its header imports `agents_md`. LORE.md is
 /// fully lore-owned, so the header is unconditionally overwritten rather than
 /// checked first — that's what keeps this idempotent without a separate
@@ -26,7 +31,11 @@ pub fn claude_skills_path(claude_dir: &Path) -> PathBuf {
 /// (via `behavior add --account`) are preserved.
 pub fn wire_lore_md(agents_md: &Path, claude_dir: &Path) -> Result<PathBuf> {
     let lore_md = lore_md_path(claude_dir);
-    let mut md = if lore_md.exists() { AgentsMd::load(&lore_md)? } else { AgentsMd::parse("") };
+    let mut md = if lore_md.exists() {
+        AgentsMd::load(&lore_md)?
+    } else {
+        AgentsMd::parse("")
+    };
     md.header = format!("@{}\n", agents_md.display());
     md.save(&lore_md)?;
     Ok(lore_md)
@@ -51,8 +60,11 @@ pub fn wire_claude_md(
         std::fs::remove_dir_all(&claude_md)?;
     }
 
-    let content =
-        if claude_md.exists() { Some(std::fs::read_to_string(&claude_md)?) } else { None };
+    let content = if claude_md.exists() {
+        Some(std::fs::read_to_string(&claude_md)?)
+    } else {
+        None
+    };
 
     if let Some(content) = &content {
         if content.lines().any(|l| l.trim() == lore_line) {
@@ -69,7 +81,10 @@ pub fn wire_claude_md(
                 .join("\n")
                 + "\n";
             std::fs::write(&claude_md, updated)?;
-            output::ok(&format!("Updated {} to import LORE.md", claude_md.display()));
+            output::ok(&format!(
+                "Updated {} to import LORE.md",
+                claude_md.display()
+            ));
             return Ok(());
         }
 
@@ -115,14 +130,23 @@ fn migrate_claude_md(
     updated.push('\n');
     std::fs::write(claude_md, updated)?;
 
-    output::ok(&format!("Migrated {} → {}", claude_md.display(), rules.display()));
+    output::ok(&format!(
+        "Migrated {} → {}",
+        claude_md.display(),
+        rules.display()
+    ));
     for line in old_content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('@') {
-            output::note(&format!("Found an existing import, left untouched: {trimmed}"));
+            output::note(&format!(
+                "Found an existing import, left untouched: {trimmed}"
+            ));
         }
     }
-    output::note(&format!("{} is no longer fully managed — add rules via behaviors instead of hand-editing it.", claude_md.display()));
+    output::note(&format!(
+        "{} is no longer fully managed — add rules via behaviors instead of hand-editing it.",
+        claude_md.display()
+    ));
 
     Ok(())
 }
@@ -201,7 +225,12 @@ pub fn wire_claude_dir(
     // LORE.md must exist before wire_claude_md runs: CLAUDE.md's new content
     // names it, and a Case-3 migration registers into this same file.
     wire_lore_md(agents_md, claude_dir)?;
-    wire_claude_md(claude_dir, agents_md, migration_behaviors_dir, migration_register_md)?;
+    wire_claude_md(
+        claude_dir,
+        agents_md,
+        migration_behaviors_dir,
+        migration_register_md,
+    )?;
     wire_claude_skills(skills_dir, claude_dir)?;
 
     Ok(())

@@ -117,7 +117,10 @@ pub fn run(account: Option<String>) -> Result<()> {
     let (migration_behaviors_dir, migration_register_md) = if account_name == "default" {
         (p.behaviors_dir.clone(), p.agents_md.clone())
     } else {
-        (claude_dir.join("behaviors"), wire::lore_md_path(&claude_dir))
+        (
+            wire::claude_behaviors_path(&claude_dir),
+            wire::lore_md_path(&claude_dir),
+        )
     };
     wire::wire_claude_dir(
         &p.agents_md,
