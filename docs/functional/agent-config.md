@@ -112,7 +112,7 @@ built binary):
 **Out of scope**: lore does not validate the *contents* of a skill directory
 (e.g. that `SKILL.md` exists) at install time — `lore list` is the only
 place a broken symlink becomes visible. This feature only changes what
-`install`/`remove` do; see [#feature-list](#feature-list) for how `list`
+`install`/`remove` do; see [Feature: list](#feature-list) for how `list`
 surfaces shared vs. per-account skills.
 
 ## Feature: behavior add / remove

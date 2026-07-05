@@ -219,6 +219,12 @@ only the thin `run()` wrapper touches that I/O. From there:
 - Removing the `is_link`/`is_live` distinction (e.g. "simplifying" to one
   check) silently changes what `list` and `accounts sync` consider broken
   vs. absent.
+- `list`'s account-section re-link filter (`print_dir_entries`'s
+  `skip_relink_target`) depends on exact path equality with the target
+  `wire::relink_skill` writes (`skills_dir.join(name)`). If either side's
+  join convention changes independently, the filter silently stops
+  matching — an account section would start double-listing shared
+  re-links (or swallowing real account skills) with no error.
 - Sorting `update --all`'s broken-candidate list (e.g. to match `list`'s
   sorted output) would change prompt order for anyone with multiple broken
   entries of the same kind — a behavior change for users mid-recovery, not
