@@ -168,9 +168,26 @@ only the thin `run()` wrapper touches that I/O. From there:
   changes always prints one collapsed `✓ Already in sync`, regardless of
   how many accounts are registered; otherwise it emits granular per-target
   "already in sync" lines for whichever targets didn't change.
-- **list**: reads both `skills_dir` and `behaviors_dir`, sorted by
-  filename, printing target + liveness for symlinks or a
-  `(migrated)`/`(built-in)` tag for real directories.
+- **list**: a shared `print_dir_entries(dir, indent, real_dir_label,
+  skip_relink_target)` helper reads a single directory, sorted by filename,
+  printing target + liveness for symlinks or a `(migrated)`/`(built-in)`
+  tag for real directories, `(none)` if nothing qualified. `run()` calls it
+  four ways: once each for the shared `skills_dir`/`behaviors_dir` (`Shared
+  skills:`/`Shared behaviors:`, no filtering), then once each per
+  registered non-`default` account (`config.accounts`, `BTreeMap` —
+  alphabetical) for `wire::claude_skills_path`/`claude_behaviors_path`
+  under an `Account: <name>` header. The account skills call passes
+  `skip_relink_target: Some(&p.skills_dir)` — entries whose symlink target
+  is exactly `skills_dir.join(name)` are shared-skill re-links (see
+  `wire::relink_skill`, [@/implementation/accounts.md#module-wirers]), not
+  account-owned installs, so they're skipped there since they're already
+  printed once under `Shared skills:`. The account behaviors call passes
+  `None`: `behavior add --account` (see above) always symlinks straight to
+  the source repo, never through a shared re-link, so no such entry can
+  exist to filter. `default` is excluded from the account loop entirely —
+  its "skills" are the shared re-links already shown, and its behaviors dir
+  is literally `p.behaviors_dir`, so a section for it would only duplicate
+  `Shared`.
 - **update**: `locate` checks `skills_dir` before `behaviors_dir` for a
   given name. Relinking is unconditional — it never checks current link
   health first, just removes any existing symlink and recreates it (the
@@ -202,6 +219,12 @@ only the thin `run()` wrapper touches that I/O. From there:
 - Removing the `is_link`/`is_live` distinction (e.g. "simplifying" to one
   check) silently changes what `list` and `accounts sync` consider broken
   vs. absent.
+- `list`'s account-section re-link filter (`print_dir_entries`'s
+  `skip_relink_target`) depends on exact path equality with the target
+  `wire::relink_skill` writes (`skills_dir.join(name)`). If either side's
+  join convention changes independently, the filter silently stops
+  matching — an account section would start double-listing shared
+  re-links (or swallowing real account skills) with no error.
 - Sorting `update --all`'s broken-candidate list (e.g. to match `list`'s
   sorted output) would change prompt order for anyone with multiple broken
   entries of the same kind — a behavior change for users mid-recovery, not
