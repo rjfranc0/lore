@@ -70,9 +70,11 @@ pub fn run(account: Option<String>) -> Result<()> {
         output::ok("AGENTS.md exists — skipping");
     }
 
-    // ── Migrate existing real skills dir ──────────────────────────────────────
+    // ── Migrate existing real skills dir (default account bootstrap only) ─────
+    // Named accounts never get their real skills moved into the shared pool —
+    // that would leak account-specific skills into every other account.
 
-    if claude_skills.exists() && !symlink::is_link(&claude_skills) {
+    if account_name == "default" && claude_skills.exists() && !symlink::is_link(&claude_skills) {
         let mut moved = 0usize;
         let mut collision = false;
 

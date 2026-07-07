@@ -244,6 +244,32 @@ fn migration_absorbs_real_dirs_but_leaves_symlinks_and_keeps_skills_dir() {
 }
 
 #[test]
+fn named_account_real_skills_are_not_migrated_to_shared_pool() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+
+    crate::helpers::make_skill(&env.agents_dir.join("skills"), "git-commit");
+
+    let work_skills = env.home.path().join(".claude-work/skills");
+    crate::helpers::make_skill(&work_skills, "git-commit");
+    crate::helpers::make_skill(&work_skills, "work-only-skill");
+
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    assert!(
+        !env.agents_dir.join("skills/work-only-skill").exists(),
+        "named account's unique skill must not leak into the shared pool"
+    );
+    assert!(work_skills.join("work-only-skill").is_dir());
+    assert!(!work_skills.join("work-only-skill").is_symlink());
+}
+
+#[test]
 fn recovery_reregisters_existing_behaviors_when_agents_md_deleted() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
