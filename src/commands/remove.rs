@@ -2,7 +2,12 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::{config::LoreConfig, output, paths::Paths, symlink, wire};
+use crate::{
+    config::{self, LoreConfig},
+    output,
+    paths::Paths,
+    symlink, wire,
+};
 
 pub fn run(skills: Vec<String>, account: Option<String>) -> Result<()> {
     let config = LoreConfig::load_or_default(&LoreConfig::config_path())?;
@@ -16,7 +21,7 @@ pub fn run(skills: Vec<String>, account: Option<String>) -> Result<()> {
 fn remove_shared(skills: &[String], config: &LoreConfig) -> Result<()> {
     let p = Paths::from_config(config);
     for raw in skills {
-        let name = raw.trim_end_matches('/');
+        let name = crate::commands::normalize_name(raw);
         let dst = p.skills_dir.join(name);
 
         if symlink::is_link(&dst) {
@@ -34,11 +39,12 @@ fn remove_shared(skills: &[String], config: &LoreConfig) -> Result<()> {
 }
 
 fn remove_scoped(skills: &[String], config: &LoreConfig, account: &str) -> Result<()> {
+    config::validate_account_name(account)?;
     let claude_dir = config.require_account_path(account)?;
     let claude_skills = wire::claude_skills_path(&claude_dir);
 
     for raw in skills {
-        let name = raw.trim_end_matches('/');
+        let name = crate::commands::normalize_name(raw);
         let dst = claude_skills.join(name);
 
         if symlink::is_link(&dst) {

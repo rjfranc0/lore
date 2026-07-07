@@ -27,7 +27,7 @@ pub fn run(skills: Vec<String>, account: Option<String>) -> Result<()> {
     std::fs::create_dir_all(&skills_dir)?;
 
     for raw in &skills {
-        let name = raw.trim_end_matches('/');
+        let name = crate::commands::normalize_name(raw);
         install_one(&cwd, &skills_dir, name)?;
 
         if claude_dir.is_none() {

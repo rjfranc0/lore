@@ -157,6 +157,29 @@ fn account_installed_skill_shown_under_account_section_only() {
 }
 
 #[test]
+fn account_default_installed_skill_shown_under_account_section() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+
+    let src = env.home.path().join("src");
+    make_skill(&src, "default-only-skill");
+
+    env.lore()
+        .arg("install")
+        .arg("default-only-skill")
+        .arg("--account")
+        .arg("default")
+        .current_dir(&src)
+        .assert()
+        .success();
+
+    let output = env.lore().arg("list").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let account_section = &stdout[stdout.find("Account: default").unwrap()..];
+    assert!(account_section.contains("default-only-skill"));
+}
+
+#[test]
 fn shared_skill_relink_not_duplicated_under_account_section() {
     let env = Env::new();
     env.lore().arg("init").assert().success();

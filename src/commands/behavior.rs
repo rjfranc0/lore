@@ -80,7 +80,7 @@ fn link_and_register(
     let mut md = AgentsMd::load(md_path)?;
 
     for raw in names {
-        let name = raw.trim_end_matches('/').to_string();
+        let name = crate::commands::normalize_name(&raw).to_string();
         let src = cwd.join(&name);
         let dst = behaviors_dir.join(&name);
 
@@ -115,7 +115,7 @@ fn unlink_and_deregister(
     not_installed: impl Fn(&str) -> String,
 ) -> Result<()> {
     for raw in names {
-        let name = raw.trim_end_matches('/').to_string();
+        let name = crate::commands::normalize_name(&raw).to_string();
         let dst = behaviors_dir.join(&name);
 
         if symlink::is_link(&dst) {
