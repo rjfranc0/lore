@@ -32,7 +32,7 @@ fn remove_shared(skills: &[String], config: &LoreConfig) -> Result<()> {
         }
 
         for account_dir in config.accounts.values() {
-            wire::unlink_account_skill(Path::new(account_dir), name)?;
+            wire::unlink_account_skill(Path::new(account_dir), &p.skills_dir, name)?;
         }
     }
     Ok(())

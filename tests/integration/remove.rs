@@ -82,6 +82,48 @@ fn shared_remove_deletes_symlink_and_account_relinks() {
 }
 
 #[test]
+fn shared_remove_preserves_differently_sourced_scoped_skill() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+
+    let src_a = env.home.path().join("src-a");
+    make_skill(&src_a, "foo");
+    env.lore()
+        .arg("install")
+        .arg("foo")
+        .arg("--account")
+        .arg("work")
+        .current_dir(&src_a)
+        .assert()
+        .success();
+
+    let src_b = env.home.path().join("src-b");
+    make_skill(&src_b, "foo");
+    env.lore()
+        .arg("install")
+        .arg("foo")
+        .current_dir(&src_b)
+        .assert()
+        .success();
+
+    // work's foo is still the scoped install from src_a, not a re-link of the shared one.
+    assert_eq!(
+        std::fs::read_link(env.account_skills("work").join("foo")).unwrap(),
+        src_a.join("foo")
+    );
+
+    env.lore().arg("remove").arg("foo").assert().success();
+
+    assert!(!env.agents_dir.join("skills/foo").exists());
+    assert!(env.account_skills("work").join("foo").is_symlink());
+    assert_eq!(
+        std::fs::read_link(env.account_skills("work").join("foo")).unwrap(),
+        src_a.join("foo")
+    );
+}
+
+#[test]
 fn account_remove_only_affects_targeted_account() {
     let env = Env::new();
     env.lore().arg("init").assert().success();

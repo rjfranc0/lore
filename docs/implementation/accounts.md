@@ -163,11 +163,15 @@ there post-init — `relink_skill` warns (naming the skill and the account's
 skills path) and skips rather than letting the raw `EEXIST` from
 `symlink::create` fail the whole fan-out over one account's collision.
 
-**`unlink_account_skill(claude_dir, name)`** removes one account's link
-for `name` if a symlink is present there, silently no-op if not — used by
-`remove` (shared path) to fan out the un-link across every registered
-account without needing to know in advance which accounts actually have
-that skill linked.
+**`unlink_account_skill(claude_dir, skills_dir, name)`** removes one
+account's link for `name`, but only if it actually resolves to
+`skills_dir/<name>` — i.e., it's a genuine re-link of the shared skill.
+An account-scoped install of the same name pointing at a different source
+(reachable per the scoped-then-shared collision case above) is left in
+place with a `warn()` rather than destroyed. Silent no-op if no symlink is
+present at all. Used by `remove` (shared path) to fan out the un-link
+across every registered account without needing to know in advance which
+accounts actually have that skill linked as a re-link (versus scoped).
 
 Both functions are re-link **primitives** — `install`/`remove` (see
 [@/implementation/agent-config.md#commands-built-on-these-primitives]) are

@@ -305,6 +305,45 @@ fn sync_rewires_claude_md_missing_lore_import() {
 }
 
 #[test]
+fn sync_heals_non_utf8_claude_md() {
+    let env = Env::new();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let work_md = env.home.path().join(".claude-work/CLAUDE.md");
+    std::fs::write(&work_md, b"\xff\xfe\x00\x80 not valid utf8").unwrap();
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    let work_lore_md = env.home.path().join(".claude-work/LORE.md");
+    let content = std::fs::read_to_string(&work_md).unwrap();
+    assert!(content.contains(&format!("@{}", work_lore_md.display())));
+}
+
+#[test]
+fn sync_heals_non_utf8_lore_md() {
+    let env = Env::new();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let work_lore_md = env.home.path().join(".claude-work/LORE.md");
+    std::fs::write(&work_lore_md, b"\xff\xfe\x00\x80 not valid utf8").unwrap();
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    let content = std::fs::read_to_string(&work_lore_md).unwrap();
+    assert!(content.contains(&format!("@{}", env.agents_md().display())));
+}
+
+#[test]
 fn sync_rewires_multiple_broken_accounts() {
     let env = Env::new();
     env.lore()

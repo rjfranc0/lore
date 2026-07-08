@@ -32,7 +32,13 @@ pub fn claude_behaviors_path(claude_dir: &Path) -> PathBuf {
 pub fn wire_lore_md(agents_md: &Path, claude_dir: &Path) -> Result<PathBuf> {
     let lore_md = lore_md_path(claude_dir);
     let mut md = if lore_md.exists() {
-        AgentsMd::load(&lore_md)?
+        AgentsMd::load(&lore_md).unwrap_or_else(|e| {
+            output::warn(&format!(
+                "{} is unreadable ({e}) — recreating it",
+                lore_md.display()
+            ));
+            AgentsMd::parse("")
+        })
     } else {
         AgentsMd::parse("")
     };
@@ -61,7 +67,16 @@ pub fn wire_claude_md(
     }
 
     let content = if claude_md.exists() {
-        Some(std::fs::read_to_string(&claude_md)?)
+        match std::fs::read_to_string(&claude_md) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                output::warn(&format!(
+                    "{} is unreadable ({e}) — replacing with a fresh LORE.md import",
+                    claude_md.display()
+                ));
+                None
+            }
+        }
     } else {
         None
     };
@@ -203,12 +218,23 @@ pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<
     Ok(())
 }
 
-/// Removes the re-link (or any symlink) for `name` from `claude_dir/skills`,
-/// if present. Silent no-op when absent.
-pub fn unlink_account_skill(claude_dir: &Path, name: &str) -> Result<()> {
+/// Removes the account's re-link for `name` from `claude_dir/skills`, but
+/// only when it actually points at `skills_dir/<name>` — an account-scoped
+/// install of the same name that points elsewhere is left untouched rather
+/// than silently destroyed. Silent no-op when no link is present.
+pub fn unlink_account_skill(claude_dir: &Path, skills_dir: &Path, name: &str) -> Result<()> {
     let link = claude_skills_path(claude_dir).join(name);
-    if symlink::is_link(&link) {
-        std::fs::remove_file(&link)?;
+    if !symlink::is_link(&link) {
+        return Ok(());
+    }
+    let expected = skills_dir.join(name);
+    match std::fs::read_link(&link) {
+        Ok(target) if target == expected => std::fs::remove_file(&link)?,
+        Ok(_) => output::warn(&format!(
+            "{name} in {} points elsewhere (account-scoped install) — leaving it in place",
+            claude_skills_path(claude_dir).display()
+        )),
+        Err(_) => {}
     }
     Ok(())
 }
