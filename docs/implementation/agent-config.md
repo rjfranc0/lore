@@ -75,9 +75,9 @@ answers "does the thing this points at actually exist as a directory right
 now." A symlink is **broken** exactly when `is_link(path) && !is_live(path)`
 — this exact combination is how `lore list` decides whether to print
 `✗ broken`, how `accounts sync` (see
-[@/implementation/accounts.md]) decides whether an account needs
+[@/implementation/accounts/index.md]) decides whether an account needs
 re-wiring, and how `lore update --all` finds its candidates (see
-[@/functional/agent-config.md#feature-update]) — three independent inline
+[@/functional/agent-config/update.md#feature-update]) — three independent inline
 copies of the same check, not a shared helper. Collapsing these two checks
 into one (e.g. just using `is_dir()`
 everywhere) would make a broken symlink indistinguishable from "nothing is
@@ -101,7 +101,7 @@ prefixing.
 
 `commands/install.rs`, `remove.rs`, `behavior.rs`, `list.rs`, `sync.rs`,
 `update.rs` all start with `Paths::load()` (see
-[@/implementation/accounts.md#module-pathsrs] — `Paths` is owned by the
+[@/implementation/accounts/config.md#module-pathsrs] — `Paths` is owned by the
 config layer, not this one, since it has to know about `LoreConfig` to
 resolve `agents_dir`) — `update.rs` differs only in shape, not substance:
 its core logic (`update_one`/`update_all`) takes `&Paths` and the resolved
@@ -115,7 +115,7 @@ only the thin `run()` wrapper touches that I/O. From there:
   `symlink::create`/`is_link` logic against `~/.agents/skills/`, plus a
   fan-out loop over every registered account calling
   `wire::relink_skill`/`unlink_account_skill` (see
-  [@/implementation/accounts.md#module-wirers]) so the same install/remove
+  [@/implementation/accounts/wire.md#module-wirers]) so the same install/remove
   reaches every account in one command. **Scoped** (`Some(name)`): resolves
   `name` via `LoreConfig::require_account_path` (bailing if unregistered)
   and applies the same symlink-create/remove logic directly against that
@@ -149,7 +149,7 @@ only the thin `run()` wrapper touches that I/O. From there:
   additionally distinguishes a symlinked behavior (removable) from a real
   directory (`is_link` false but `path.is_dir()` true) — that's the
   built-in-behavior protection described in
-  [@/functional/agent-config.md#feature-behavior-add--remove]; the scoped
+  [@/functional/agent-config/behaviors.md#feature-behavior-add--remove]; the scoped
   call's warning names that account's `LORE.md` path instead of the
   shared `AGENTS.md`.
 - **sync**: two passes sharing one helper, `reconcile_behaviors(md: &mut
@@ -188,7 +188,7 @@ only the thin `run()` wrapper touches that I/O. From there:
   every other account gets, not a hardcoded shared-tree path. The account
   skills call passes `skip_relink_target: Some(&p.skills_dir)` — entries
   whose symlink target is exactly `skills_dir.join(name)` are shared-skill
-  re-links (see `wire::relink_skill`, [@/implementation/accounts.md#module-wirers]),
+  re-links (see `wire::relink_skill`, [@/implementation/accounts/wire.md#module-wirers]),
   not account-owned installs, so they're skipped there since they're
   already printed once under `Shared skills:`. The account behaviors call
   passes `None`: `behavior add --account` (see above) always symlinks

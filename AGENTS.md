@@ -54,6 +54,13 @@ for why it's opt-in and what CI already gates on every push.
 
 ## Coding conventions
 
+This section is intentionally a short pointer list, not the full
+corpus convention template (no separate Error Handling / Async Conventions
+/ Commit Format subsections) — lore is a small, synchronous CLI with one
+error type (`anyhow::Result`) and no async code, so those categories would
+be empty or redundant with the point below. Extend this list, not the
+template shape, if that ever stops being true.
+
 - Rust. Deps: `clap` (derive), `anyhow`, `dirs`, `serde` (derive), `toml`.
   Dev: `assert_cmd`, `tempfile`, `predicates`.
 - All commands return `anyhow::Result<()>`. Dispatch happens in
@@ -64,9 +71,9 @@ for why it's opt-in and what CI already gates on every push.
   `note()` for indented sub-info.
 - `AGENTS.md`/`LORE.md`'s block format and every config/wiring contract
   (config path resolution, account registry shape, etc.) are documented in
-  [docs/functional/agent-config.md](docs/functional/agent-config.md) and
-  [docs/implementation/accounts.md](docs/implementation/accounts.md) —
-  read those rather than re-deriving the format from `agents_md.rs`.
+  [docs/functional/agent-config/index.md](docs/functional/agent-config/index.md)
+  and [docs/implementation/accounts/index.md](docs/implementation/accounts/index.md)
+  — read those rather than re-deriving the format from `agents_md.rs`.
 
 ## Testing without touching real config
 

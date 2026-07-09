@@ -79,7 +79,7 @@ function returns `anyhow::Result<()>`. `lib.rs::run()` is the single place
 that turns `Err(e)` into user-visible output —
 `eprintln!("✗ {e}")` plus `ExitCode::FAILURE`. No command module prints its
 own top-level failure message; they only `bail!`/`?` upward, see
-[@/implementation/agent-config.md] and [@/implementation/accounts.md] for
+[@/implementation/agent-config.md] and [@/implementation/accounts/index.md] for
 what each command actually does once dispatched.
 
 ## Help text duplication (known sharp edge)
@@ -93,15 +93,15 @@ generated from the other:
   `lore help`) — the full manual, piped through `$PAGER` (default `less`)
   if one spawns successfully, otherwise printed directly to stdout.
 
-> ⚠️ **Inferred:** there is no test or build step that checks these two
-> stay consistent with each other, or with `cli.rs`'s actual `Command`
-> enum. Adding a new subcommand requires remembering to update
-> `SHORT_HELP`, `help.txt`, *and* `cli.rs` by hand — confirmed by reading
-> all three, not stated anywhere as a rule. A change to one without the
-> other two is a silent doc-drift bug, not a compile error.
+Confirmed: no test or build step checks these two stay consistent with
+each other, or with `cli.rs`'s actual `Command` enum (verified against
+`tests/integration/` — no test references `SHORT_HELP` or `help.txt`).
+Adding a new subcommand requires remembering to update `SHORT_HELP`,
+`help.txt`, *and* `cli.rs` by hand. A change to one without the other two
+is a silent doc-drift bug, not a compile error.
 
 **Confirmed instance**: the `update` subcommand updated `SHORT_HELP` (see
-[@/functional/agent-config.md#feature-update]) but not `help.txt` —
+[@/functional/agent-config/update.md#feature-update]) but not `help.txt` —
 `lore help` does not mention `update` anywhere (COMMANDS, FILES, or
 EXAMPLES) as of this writing. This is a product gap, not just a doc one;
 `docs/` cannot fix it, since `help.txt` is the source of truth it would be

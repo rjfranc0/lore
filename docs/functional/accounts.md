@@ -165,7 +165,7 @@ instructions never leak into every other account's config.
 directory holding one re-link per shared skill
 (`~/.claude-<name>/skills/<skill> → ~/.agents/skills/<skill>`). This is
 what makes per-account skill scoping possible — see
-[@/functional/agent-config.md#feature-skill-install--remove] — an
+[@/functional/agent-config/skills.md#feature-skill-install--remove] — an
 account-specific symlink can live in that same directory alongside the
 shared re-links, which a single top-level symlink could never hold.
 
@@ -219,7 +219,7 @@ Nothing on disk — not the `~/.claude-<name>/` directory, not `CLAUDE.md`,
 not the skills symlink — is touched.
 
 **Why**: consistent with lore's broader non-destructive philosophy (see
-[@/functional/agent-config.md] — symlinks are never force-deleted either).
+[@/functional/agent-config/index.md] — symlinks are never force-deleted either).
 Forgetting an account is reversible by hand (the directory is still there);
 forgetting it *and* wiping its directory would not be.
 
@@ -246,7 +246,7 @@ is the repair tool, parallel to `lore sync` but scoped to Claude wiring
 (the `CLAUDE.md`/`LORE.md` import chain, the skills directory shape)
 instead of behavior-entry content — `lore sync` owns reconciling entries
 *inside* `AGENTS.md` and every `LORE.md`, see
-[@/functional/agent-config.md#feature-sync-agentsmd--per-account-loremd-reconciliation].
+[@/functional/agent-config/sync.md#feature-sync-agentsmd--per-account-loremd-reconciliation].
 The two `sync` commands are intentionally separate (`lore sync` vs. `lore
 accounts sync`) rather than one command with a flag, to keep each one's
 blast radius obvious from its own name.
@@ -267,12 +267,14 @@ blast radius obvious from its own name.
   when `accounts sync` runs, then nothing is rewritten and it reports as
   such.
 
-> ⚠️ **Inferred:** a read failure on `CLAUDE.md` or `LORE.md` (permission
-> denied, non-UTF8 content) is treated the same as "not wired" and triggers
-> a rewire, rather than being surfaced as a distinct error. This is a
-> deliberate choice (a self-healing command shouldn't need a separate error
-> branch for an unreadable-but-fixable file), confirmed during this
-> feature's own review pass rather than guessed from code alone.
+A read failure on `CLAUDE.md` or `LORE.md` (permission denied, non-UTF8
+content) is treated the same as "not wired" and triggers a rewire, rather
+than being surfaced as a distinct error — confirmed deliberate: this is a
+fix (see `wire_lore_md`/`wire_claude_md` in
+[@/implementation/accounts/wire.md#module-wirers]), not an original design
+choice. Before it, `accounts sync`/`init` claimed this self-healing
+behavior but actually aborted on the read error instead, because the
+rewire path reused the same failing load call.
 
 ## Decisions
 
@@ -294,5 +296,5 @@ blast radius obvious from its own name.
 - Disk cleanup on `accounts remove` — by design, see above.
 
 Both skill scoping and behavior scoping are no longer non-goals — see
-[@/functional/agent-config.md#feature-skill-install--remove] and
-[@/functional/agent-config.md#feature-behavior-add--remove].
+[@/functional/agent-config/skills.md#feature-skill-install--remove] and
+[@/functional/agent-config/behaviors.md#feature-behavior-add--remove].
