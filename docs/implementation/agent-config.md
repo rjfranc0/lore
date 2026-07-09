@@ -120,9 +120,15 @@ only the thin `run()` wrapper touches that I/O. From there:
   `name` via `LoreConfig::require_account_path` (bailing if unregistered)
   and applies the same symlink-create/remove logic directly against that
   one account's skills dir instead of the shared one — `~/.agents/skills/`
-  and every other account are never touched. Both paths share the
-  trailing-slash strip (`name.trim_end_matches('/')`) so tab-completion's
-  `my-skill/` and a hand-typed `my-skill` resolve to the same path.
+  and every other account are never touched. The **scoped** path validates
+  `name` via `config::validate_account_name` before resolving it, same as
+  every other `--account`-scoped command. Both paths (and `behavior
+  add`/`remove`'s scoped/shared functions below) share one trailing-slash
+  strip, `commands::normalize_name` (`raw.trim_end_matches('/')`, defined
+  once in `commands/mod.rs`) — factored out of what used to be independent
+  inline copies per command — so tab-completion's `my-skill/` and a
+  hand-typed `my-skill` resolve to the same path everywhere a name is taken
+  as an argument.
 - **behavior add/remove**: like install/remove, each takes an `account:
   Option<String>` and dispatches — `add`/`remove` are thin wrappers that
   branch to `add_shared`/`add_scoped` or `remove_shared`/`remove_scoped`.
@@ -168,26 +174,38 @@ only the thin `run()` wrapper touches that I/O. From there:
   changes always prints one collapsed `✓ Already in sync`, regardless of
   how many accounts are registered; otherwise it emits granular per-target
   "already in sync" lines for whichever targets didn't change.
-- **list**: a shared `print_dir_entries(dir, indent, real_dir_label,
+- **list**: a shared `collect_dir_entries(dir, indent, real_dir_label,
   skip_relink_target)` helper reads a single directory, sorted by filename,
-  printing target + liveness for symlinks or a `(migrated)`/`(built-in)`
-  tag for real directories, `(none)` if nothing qualified. `run()` calls it
-  four ways: once each for the shared `skills_dir`/`behaviors_dir` (`Shared
+  rendering target + liveness for symlinks or a `(migrated)`/`(built-in)`
+  tag for real directories, `(none)` if nothing qualified, and returns
+  `(rendered_text, found_any)` so callers can also decide whether a section
+  is worth printing at all (`print_dir_entries` is a thin wrapper that
+  discards the bool for the shared, always-printed sections). `run()` calls
+  it once each for the shared `skills_dir`/`behaviors_dir` (`Shared
   skills:`/`Shared behaviors:`, no filtering), then once each per
-  registered non-`default` account (`config.accounts`, `BTreeMap` —
-  alphabetical) for `wire::claude_skills_path`/`claude_behaviors_path`
-  under an `Account: <name>` header. The account skills call passes
-  `skip_relink_target: Some(&p.skills_dir)` — entries whose symlink target
-  is exactly `skills_dir.join(name)` are shared-skill re-links (see
-  `wire::relink_skill`, [@/implementation/accounts.md#module-wirers]), not
-  account-owned installs, so they're skipped there since they're already
-  printed once under `Shared skills:`. The account behaviors call passes
-  `None`: `behavior add --account` (see above) always symlinks straight to
-  the source repo, never through a shared re-link, so no such entry can
-  exist to filter. `default` is excluded from the account loop entirely —
-  its "skills" are the shared re-links already shown, and its behaviors dir
-  is literally `p.behaviors_dir`, so a section for it would only duplicate
-  `Shared`.
+  registered account — **`default` included** — via `wire::claude_skills_path`/
+  `claude_behaviors_path`, i.e. the exact same account-directory resolution
+  every other account gets, not a hardcoded shared-tree path. The account
+  skills call passes `skip_relink_target: Some(&p.skills_dir)` — entries
+  whose symlink target is exactly `skills_dir.join(name)` are shared-skill
+  re-links (see `wire::relink_skill`, [@/implementation/accounts.md#module-wirers]),
+  not account-owned installs, so they're skipped there since they're
+  already printed once under `Shared skills:`. The account behaviors call
+  passes `None`: `behavior add --account` (see above) always symlinks
+  straight to the source repo, never through a shared re-link, so no such
+  entry can exist to filter.
+
+  **Only the `Account: <name>` header's print is conditional, not the loop
+  itself**: a section is skipped exactly when `name == "default"` *and*
+  both `has_skills`/`has_behaviors` (the bool each `collect_dir_entries`
+  call returns) come back false. Any other account always gets a section,
+  even when fully empty (rendered as two `(none)` sub-sections) — that's
+  what distinguishes "registered but empty" from "not registered" for a
+  named account. For `default` specifically, staying silent only when it
+  has nothing account-specific to show is what keeps a bare `lore init`
+  from growing a permanent empty `Account: default` section, while still
+  surfacing a skill or behavior installed with `--account default` under
+  its own section, exactly like any other account.
 - **update**: `locate` checks `skills_dir` before `behaviors_dir` for a
   given name. Relinking is unconditional — it never checks current link
   health first, just removes any existing symlink and recreates it (the
@@ -229,3 +247,7 @@ only the thin `run()` wrapper touches that I/O. From there:
   sorted output) would change prompt order for anyone with multiple broken
   entries of the same kind — a behavior change for users mid-recovery, not
   just an internal cleanup.
+- Reintroducing an unconditional exclusion of `default` from `list`'s
+  account loop (instead of gating only the empty-section print on it)
+  would hide any skill or behavior installed via `--account default`, even
+  though it's registered and wired exactly like any other account.

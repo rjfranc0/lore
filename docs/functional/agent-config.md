@@ -293,6 +293,11 @@ actually have" — this feature makes that question answerable directly.
 - Given no accounts are registered beyond `default`, when `list` runs, then
   no `Account:` section is printed at all — output is exactly the two
   shared sections, matching the pre-multi-account output shape.
+- Given the `default` account has its own scoped installs (e.g. `lore
+  install --account default <skill>`), when `list` runs, then an `Account:
+  default` section **is** printed, scoped exactly like any other account's
+  section — `default` only stays silent when it has nothing
+  account-specific to show.
 - Given an account has a skill installed via the shared path (fanned out as
   a re-link into that account's skills dir, see
   [@/implementation/accounts.md#module-wirers]), when `list` runs, then

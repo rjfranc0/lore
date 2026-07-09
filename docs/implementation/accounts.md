@@ -255,7 +255,17 @@ in, keyed on `account_name == "default"`: the shared `p.behaviors_dir` /
 one. This split is what keeps a named account's migrated instructions from
 ever touching the shared `AGENTS.md`.
 
-**Skill migration collision**: while iterating `claude_skills`'s entries,
+**Skill migration is gated on `account_name == "default"`** — the entire
+block described below (moving real skill directories into `skills_dir`,
+the collision bail) is skipped outright for a named account
+(`init --account <name>`). A named account's pre-existing real `skills/`
+dir is left exactly as it was; nothing from it is ever moved into the
+shared pool. This is deliberate: the migration only makes sense once, for
+the one account whose skills become the shared pool — running it again for
+every named account would leak that account's own skills into every other
+account's shared tree.
+
+For the default account, while iterating `claude_skills`'s entries,
 symlinks are skipped outright (`continue`) — only **real** (non-symlinked)
 directories are candidates for migration into `skills_dir`. This is what
 keeps a previous `init` run's re-links (or a scoped account-specific
@@ -271,6 +281,16 @@ directory itself is never removed at the end of this step — unlike the
 pre-this-feature behavior, it is now permanent infrastructure (see
 `wire_claude_skills` above), not a symlink target to be cleared and
 replaced.
+
+**A named account gets a different, softer collision path.** Since it
+never migrates its own skills, a name shared between something already in
+its real `skills/` dir and a skill in the shared pool is only caught later,
+when `wire_claude_dir` calls `wire_claude_skills` → `relink_skill` for
+every shared skill (see `relink_skill` above): a non-symlink entry already
+occupying that name makes `relink_skill` warn and skip just that one entry,
+not bail the whole command. The same *kind* of collision is therefore a
+hard stop for the default account but only a per-skill warning for a named
+one.
 
 > ⚠️ **Inferred:** the ordering itself is read directly from the code; that
 > it's *deliberate* is not — there's no comment explaining why the bail
@@ -346,6 +366,10 @@ same surgical CLAUDE.md handling `init` does, never a separate code path.
 - Changing `init.rs`'s branch back to `account.is_some()` reintroduces the
   `--account default` collision: a fully-wired, registry-invisible
   `~/.claude-default/` directory.
+- Removing the `account_name == "default"` gate on skill migration would
+  make `init --account <name>` start moving a named account's own real
+  skills into the shared pool again — leaking them into every other
+  account instead of leaving that account's `skills/` dir alone.
 - `LoreConfig::save`'s parent-dir creation means removing it from
   `config.rs` would break `init`'s account-registration step today, since
   that call site relies on it rather than creating the directory itself.

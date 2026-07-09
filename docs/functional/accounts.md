@@ -169,6 +169,19 @@ what makes per-account skill scoping possible — see
 account-specific symlink can live in that same directory alongside the
 shared re-links, which a single top-level symlink could never hold.
 
+**A named account's own real skills are never migrated into the shared
+pool.** Only the default account's bootstrap moves pre-existing real skill
+directories out of `skills/` and into `~/.agents/skills/` (see "Skill
+collision is a hard stop," above, under the default-account feature).
+`~/.claude-<name>/skills/` may already hold real (non-symlinked) skill
+directories from before that account was ever wired into lore —
+`init --account <name>` leaves every one of them exactly where it is and
+only adds re-links for shared skills alongside them. If a shared skill's
+name collides with one already there, that one re-link is skipped with a
+warning — unlike the default account's collision handling, this is not a
+hard stop; the rest of the run, including wiring `CLAUDE.md`, still
+completes.
+
 **Acceptance conditions**:
 - Given `--account work` runs twice, when the config is inspected, then
   exactly one `work` entry exists (idempotent registration, not a
@@ -181,6 +194,11 @@ shared re-links, which a single top-level symlink could never hold.
   --account work` runs, then the migrated copy registers in
   `~/.claude-work/LORE.md`, and the shared `~/.agents/AGENTS.md` is left
   untouched.
+- Given `~/.claude-work/skills/` already has its own real skill directories
+  before `--account work` is ever run, when `init --account work` runs,
+  then none of them are moved into `~/.agents/skills/` — they stay in
+  place, and only re-links for skills already in the shared pool are added
+  alongside them.
 
 ## Feature: `accounts list`
 
