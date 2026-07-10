@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.2](https://github.com/rjfranc0/lore/compare/v1.0.1...v1.0.2) (2026-07-10)
+
+
+### Bug Fixes
+
+* **release:** build x86_64 Linux target as static musl binary ([#20](https://github.com/rjfranc0/lore/issues/20)) ([0f01e25](https://github.com/rjfranc0/lore/commit/0f01e253afff2ad6047141f872702d918773c0c5))
+
+
+### Documentation
+
+* sync README with multi-account and update commands ([#18](https://github.com/rjfranc0/lore/issues/18)) ([a8e7243](https://github.com/rjfranc0/lore/commit/a8e72432509226a6befd85d9a3246559c2677166))
+
 ## [1.0.1](https://github.com/rjfranc0/lore/compare/v1.0.0...v1.0.1) (2026-07-10)
 
 
