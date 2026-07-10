@@ -54,10 +54,13 @@ triggering commit overrides release-please's own version inference.
 
 ## Release build matrix
 
-Triggered only by a pushed `v*` tag (`.github/workflows/release.yml`) —
-never by merging to `main`/`dev` directly; the tag is what
-release-please's own PR-merge ultimately produces. Builds 4 targets in
-parallel:
+Triggered by a pushed `v*` tag, or manually via `workflow_dispatch` with a
+`tag` input (`.github/workflows/release.yml`) — never by merging to
+`main`/`dev` directly; the tag is what release-please's own PR-merge
+ultimately produces. The manual path exists to recover a release that was
+created without a build (see the `RELEASE_PLEASE_TOKEN` note below); both
+paths resolve to the same `env.RELEASE_TAG`, which drives checkout ref,
+`tag_name`, and the `prerelease` check. Builds 4 targets in parallel:
 
 | Target | Runner | Cross-compiled via `cross`? |
 |---|---|---|
@@ -114,4 +117,18 @@ config line to add.
   locally.
 - Merging to `main`/`dev` with a non-conventional squash-commit subject
   produces no version bump and no changelog entry for that change —
-  silently, with no CI failure to catch it.
+  silently, with no CI failure to catch it. **Confirmed**: the same space
+  before the colon (`feat : ...` instead of `feat: ...`) breaks the
+  conventional-commit parser too — PRs #5 and #7 both used that shape and
+  produced no release-please activity at all.
+- `release-please.yml`'s `googleapis/release-please-action` step must
+  authenticate with a PAT (`secrets.RELEASE_PLEASE_TOKEN`), not
+  `secrets.GITHUB_TOKEN`. **Confirmed**: GitHub suppresses downstream
+  workflow triggers (including both `push: tags` and `release: published`)
+  for any tag/release created using the default `GITHUB_TOKEN`, to prevent
+  recursive workflow runs. With `GITHUB_TOKEN`, release-please still tags
+  and publishes the GitHub Release, but `release.yml` never fires — the
+  release silently ships with zero binaries attached. This is exactly what
+  happened to `v0.2.0` and initially to `v1.0.0` before the token was
+  switched to a PAT; `release.yml`'s `workflow_dispatch` input exists
+  specifically to rebuild/attach binaries to a tag that shipped this way.
