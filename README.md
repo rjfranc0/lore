@@ -79,12 +79,16 @@ Behaviors work the same way, with one extra step. When you run `lore behavior ad
 
 | Command | What it does |
 |---|---|
-| `lore init` | Bootstrap `~/.agents/` and wire up Claude |
-| `lore install <skill> [...]` | Install skill(s) from the current directory |
-| `lore remove <skill> [...]` | Uninstall skill(s) |
-| `lore behavior add <name> [...]` | Install behavior(s) and update `AGENTS.md` |
-| `lore behavior remove <name> [...]` | Remove behavior(s) |
+| `lore init [--account <name>]` | Bootstrap `~/.agents/` and wire up a Claude account |
+| `lore install <skill> [...] [--account <name>]` | Install skill(s) from the current directory |
+| `lore remove <skill> [...] [--account <name>]` | Uninstall skill(s) |
+| `lore behavior add <name> [...] [--account <name>]` | Install behavior(s) and update `AGENTS.md`/`LORE.md` |
+| `lore behavior remove <name> [...] [--account <name>]` | Remove behavior(s) |
+| `lore accounts list` | Show every registered Claude account |
+| `lore accounts remove <name>` | Forget an account (registry only, nothing on disk) |
+| `lore accounts sync` | Re-wire any account that's broken on disk |
 | `lore sync` | Reconcile `AGENTS.md` from disk |
+| `lore update <name> [--path <path>]` / `--all` | Re-link a skill/behavior whose source repo moved |
 | `lore list` | Show everything that's installed |
 | `lore version` | Print the version |
 | `lore help` | Full manual |
@@ -101,15 +105,34 @@ You don't have to clean anything up first. `lore init` notices existing content 
 
 Nothing gets thrown away or overwritten, and lore prints exactly where each piece landed, plus any `@import` lines left over from other tools so you know they're still there, untouched. If a skill name would collide with one you already have, lore stops before changing anything and tells you what to resolve — better a clear halt than a half-migrated mess. And if you ever delete `AGENTS.md` by accident, re-running `lore init` rebuilds it from the behaviors still on disk.
 
-## Pointing lore somewhere else
+## More than one Claude account
 
-Two environment variables let you redirect where lore reads and writes. Set both and you can exercise the whole tool without going near your real config — handy for testing, or for running more than one Claude profile:
+`~/.agents/` is shared, but you can wire it into more than one Claude
+config directory — say, a personal `~/.claude/` and a work
+`~/.claude-work/`:
 
 ```bash
-AGENTS_DIR=/tmp/test/agents CLAUDE_DIR=/tmp/test/claude lore init
+lore init --account work
+lore accounts list
+lore accounts sync   # re-wire anything that's drifted or broken on disk
 ```
 
-`AGENTS_DIR` defaults to `~/.agents` and moves every derived path with it. `CLAUDE_DIR` defaults to `~/.claude`.
+Every account gets its own `LORE.md`, but they all import the same
+shared `AGENTS.md` — install a skill or behavior once, scope it to an
+account with `--account <name>` if you don't want it everywhere.
+
+## Config file
+
+lore's own settings live in `~/.config/lore/lore.toml` — just
+`agents_dir` and the accounts registry. It's created automatically the
+first time you register something; you won't normally touch it by hand.
+
+Point lore at a different config entirely with `LORE_CONF` — handy for
+testing without going near your real setup:
+
+```bash
+LORE_CONF=/tmp/test-lore.toml lore init
+```
 
 ## Tests
 
@@ -123,8 +146,6 @@ Tests run against throwaway temp directories, so they never touch your real setu
 
 ## Roadmap
 
-- [ ] Multi-account Claude support (`~/.claude-<account>/` directories)
-- [ ] `lore update` — re-link skills after a repo moves on disk
 - [ ] Integrations for other tools (Cursor, Windsurf, Zed)
 
 ## License
