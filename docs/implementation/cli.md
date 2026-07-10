@@ -100,12 +100,14 @@ Adding a new subcommand requires remembering to update `SHORT_HELP`,
 `help.txt`, *and* `cli.rs` by hand. A change to one without the other two
 is a silent doc-drift bug, not a compile error.
 
-**Confirmed instance**: the `update` subcommand updated `SHORT_HELP` (see
-[@/functional/agent-config/update.md#feature-update]) but not `help.txt` —
-`lore help` does not mention `update` anywhere (COMMANDS, FILES, or
-EXAMPLES) as of this writing. This is a product gap, not just a doc one;
-`docs/` cannot fix it, since `help.txt` is the source of truth it would be
-documenting.
+As of this writing, `cli.rs`'s `Command` enum, `SHORT_HELP`, and `help.txt`'s
+COMMANDS section all agree — every variant (including `update`) is present
+in each. That agreement is incidental, not enforced: nothing in the codebase
+or CI would catch the three drifting apart again, so a future subcommand
+addition remains one `SHORT_HELP`/`help.txt` update away from silently
+shipping undocumented. `docs/` cannot close this gap — `help.txt` is the
+source of truth it would be documenting, so the fix (if one is wanted) is a
+test that diffs the three sources, not a doc change.
 
 ## What breaks if this is touched
 
