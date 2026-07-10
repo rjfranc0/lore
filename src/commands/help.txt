@@ -16,27 +16,60 @@ DESCRIPTION
        Behaviors are listed in ~/.agents/AGENTS.md as @import lines.
 
 COMMANDS
-       init
-              Bootstrap ~/.agents/ and wire Claude. Handles two cases:
+       init [--account <name>]
+              Bootstrap ~/.agents/ and wire Claude.
 
-              Case 1 — empty install:
-                     Creates AGENTS.md, skills/, and behaviors/.
-                     Writes @~/.agents/AGENTS.md into ~/.claude/CLAUDE.md.
-                     Symlinks ~/.claude/skills → ~/.agents/skills.
+              Creates AGENTS.md, skills/, and behaviors/ if missing.
+              Creates/updates LORE.md (fully lore-owned) to import
+              AGENTS.md. Then wires CLAUDE.md surgically:
 
-              Case 2 — existing CLAUDE.md or skills/:
-                     Migrates CLAUDE.md content to
-                         ~/.agents/behaviors/from-claude/RULES.md
-                     Moves any real skills into ~/.agents/skills/.
-                     Overwrites CLAUDE.md with the @import.
-                     Logs where old instructions now live.
+                     @LORE.md already present  → untouched (idempotent)
+                     @AGENTS.md present        → that line replaced
+                                                  with @LORE.md
+                     other content, no import  → copied to
+                                                  behaviors/from-claude/
+                                                  RULES.md, registered,
+                                                  @LORE.md appended below
+                                                  the original content
+                     empty or absent           → @LORE.md written
+
+              CLAUDE.md is never fully overwritten — only lore's own
+              line is ever added or replaced. Any pre-existing @import
+              lines from other tools are named in the migration warning
+              and left untouched.
+
+              Symlinks ~/.claude/skills → ~/.agents/skills.
 
               On a skill-name collision, init stops before writing
               CLAUDE.md so config is never left half-wired. If
               AGENTS.md is deleted, re-running rebuilds it and
               re-registers behaviors still present on disk.
 
-              Idempotent. Multi-account support: planned.
+              --account <name>
+                     Wires ~/.claude-<name>/ instead of ~/.claude/ and
+                     registers <name> in the accounts registry. Name
+                     must be alphanumeric/hyphens only — anything else
+                     is rejected before any disk operation. Migrated
+                     content for a named account registers in that
+                     account's own LORE.md, not the shared AGENTS.md.
+
+              Idempotent. Registers the account ("default" when no
+              --account flag is given) in ~/.config/lore/lore.toml.
+
+       accounts list
+              Print the accounts registry: name and wired path.
+
+       accounts remove <name>
+              Remove an account from the registry only. Nothing on
+              disk is touched — not ~/.claude-<name>/, not CLAUDE.md,
+              not the skills symlink. Removing "default" is allowed,
+              with a warning.
+
+       accounts sync
+              Re-wire any registered account whose wiring is broken
+              on disk (missing/incorrect CLAUDE.md or LORE.md import,
+              or a missing/dead skills symlink). Reports each action,
+              or that accounts are already in sync.
 
        install <skill> [...]
               Install one or more skills from the current directory.
@@ -52,7 +85,7 @@ COMMANDS
               Remove skill symlinks. Source dirs are never touched.
               A trailing slash is stripped.
 
-       behavior add <name> [...]
+       behavior add <name> [...] [--account <name>]
               Install behaviors from the current directory.
               Requires 'lore init' to have run first.
 
@@ -69,7 +102,16 @@ COMMANDS
               Idempotent. Each step runs only if not already done.
               A trailing slash on the name is stripped.
 
-       behavior remove <name> [...]
+              --account <name>
+                     Scopes the behavior to ~/.claude-<name>/ instead
+                     of the shared ~/.agents/: symlink goes in
+                     ~/.claude-<name>/behaviors/ and the entry is
+                     appended to that account's LORE.md instead of
+                     AGENTS.md. Requires 'lore init --account <name>'
+                     to have run first (i.e. that account's LORE.md
+                     must already exist).
+
+       behavior remove <name> [...] [--account <name>]
               Removes the behavior symlink and its <!-- name --> + @path
               block from AGENTS.md. The name is matched exactly, so a
               behavior like a.c never clobbers a sibling like axc. A
@@ -77,6 +119,12 @@ COMMANDS
 
               Built-in behaviors (e.g. from-claude) must be removed
               manually — lore will tell you exactly what to do.
+
+              --account <name>
+                     Removes from ~/.claude-<name>/behaviors/ and that
+                     account's LORE.md instead of AGENTS.md. The
+                     @~/.agents/AGENTS.md header line in LORE.md is
+                     never removed.
 
        sync
               Reconcile AGENTS.md against behaviors currently on disk.
@@ -87,6 +135,34 @@ COMMANDS
 
               Exits 0 in all cases, including when nothing changed.
               Requires 'lore init' to have run first.
+
+       update <name> [--path <path>]
+              Re-link a skill or behavior whose source has moved.
+              Relinks unconditionally — even if the symlink is already
+              healthy, not just when broken.
+
+                  Without --path: relinks to $PWD/<name>
+                  With --path:    relinks to <path> instead
+
+              For behaviors, also re-resolves the entry file and updates
+              the AGENTS.md @path line if the entry filename changed. If
+              AGENTS.md can't be updated (e.g. it doesn't exist, or the
+              new location has no resolvable entry file), the relink
+              still completes — only the AGENTS.md update is skipped,
+              with a warning.
+
+       update --all
+              Scan ~/.agents/skills/ and ~/.agents/behaviors/ for broken
+              symlinks and relink them interactively, prompting for a
+              new path per entry.
+
+                  blank answer            skip this entry, continue
+                  non-directory answer    warn, skip, continue
+                  AGENTS.md update fails  warn, continue (symlink itself
+                                          still relinked)
+
+              Exits 0 and prints "No broken symlinks found" if nothing
+              is broken.
 
        list
               Print all installed skills and behaviors with symlink
@@ -118,26 +194,25 @@ AGENTS.MD FORMAT
        uses to find and remove the block.
 
 ENVIRONMENT
-       AGENTS_DIR
-              Override the base directory. Default: ~/.agents
-              All derived paths move with it.
+       LORE_CONF
+              Override the config file path. Default:
+                  ~/.config/lore/lore.toml
 
-              AGENTS_DIR=/tmp/test-agents lore init
+              The config file holds agents_dir and the accounts
+              registry — see FILES below.
 
-       CLAUDE_DIR
-              Override the Claude config directory. Default: ~/.claude
-              Useful for testing and multi-account setups.
-
-              export HOME=/tmp/lore-smoke-$$
-              export CLAUDE_DIR=/tmp/lore-smoke-claude-$$
-              lore init
+              LORE_CONF=/tmp/test-lore.toml lore init
 
 FILES
+       ~/.config/lore/lore.toml     lore config: agents_dir + accounts registry
        ~/.agents/AGENTS.md          Universal agent instructions
        ~/.agents/skills/            Skill symlinks
        ~/.agents/behaviors/         Behavior symlinks + built-ins
-       ~/.claude/CLAUDE.md          Managed by lore: @import → AGENTS.md
+       ~/.claude/LORE.md            Managed by lore: @import → AGENTS.md
+       ~/.claude/CLAUDE.md          Managed by lore: @import → LORE.md
+                                     (surgical — only this one line is lore's)
        ~/.claude/skills             Symlink → ~/.agents/skills
+       ~/.claude-<name>/            Per-account Claude dir (--account <name>)
 
 EXAMPLES
        Bootstrap:
@@ -157,14 +232,26 @@ EXAMPLES
        List with status:
            lore list
 
-       Dry-run against a temp dir:
-           AGENTS_DIR=/tmp/test-agents lore init
+       Re-link after moving a repo:
+           cd ~/repos/ai-restaurant-v2/skills
+           lore update cooking-chef
+
+       Re-link everything broken:
+           lore update --all
+
+       Dry-run against a temp config:
+           LORE_CONF=/tmp/test-lore.toml lore init
+
+       Multi-account:
+           lore init --account work
+           lore accounts list
+           lore accounts sync
 
 NOTES
        Uninstalling is non-destructive — only symlinks are removed,
        source files in repos are never touched.
 
-       Multi-account Claude support (multiple ~/.claude-<account>/
-       directories) is planned for a future release.
+       accounts remove is registry-only too — it never touches
+       ~/.claude-<name>/ on disk.
 
 LORE(1)                      User Commands                      LORE(1)

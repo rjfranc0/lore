@@ -1,5 +1,5 @@
-use std::path::Path;
 use anyhow::Result;
+use std::path::Path;
 
 pub fn create(src: &Path, dst: &Path) -> Result<()> {
     #[cfg(unix)]
@@ -11,7 +11,8 @@ pub fn create(src: &Path, dst: &Path) -> Result<()> {
 
 /// Returns true if `path` is a symlink (even a broken one).
 pub fn is_link(path: &Path) -> bool {
-    path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink())
+    path.symlink_metadata()
+        .is_ok_and(|m| m.file_type().is_symlink())
 }
 
 /// Returns true if the symlink target is a live directory (matches bash's `[[ -d ]]` semantics).

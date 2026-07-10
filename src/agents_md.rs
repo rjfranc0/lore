@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
 
 pub struct AgentsMd {
     pub header: String,
@@ -34,7 +34,11 @@ impl AgentsMd {
         }
 
         // Strip trailing blank lines from header, keep one trailing newline
-        while header_lines.last().map(|l| l.trim().is_empty()).unwrap_or(false) {
+        while header_lines
+            .last()
+            .map(|l| l.trim().is_empty())
+            .unwrap_or(false)
+        {
             header_lines.pop();
         }
         let header = if header_lines.is_empty() {
@@ -120,7 +124,9 @@ pub fn behavior_entry(dir: &Path) -> Result<PathBuf> {
         .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md") && p.is_file())
         .collect();
     candidates.sort();
-    candidates.into_iter().next()
+    candidates
+        .into_iter()
+        .next()
         .ok_or_else(|| anyhow::anyhow!("no .md entry point found in {}", dir.display()))
 }
 

@@ -1,7 +1,12 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "lore", version, disable_version_flag = true, disable_help_subcommand = true)]
+#[command(
+    name = "lore",
+    version,
+    disable_version_flag = true,
+    disable_help_subcommand = true
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -10,24 +15,44 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Bootstrap ~/.agents/ and wire Claude integration
-    Init,
+    Init {
+        #[arg(long)]
+        account: Option<String>,
+    },
     /// Install skill(s) from the current directory
     Install {
         #[arg(required = true)]
         skills: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
     /// Uninstall skill(s)
     Remove {
         #[arg(required = true)]
         skills: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
     /// Manage behaviors
     Behavior {
         #[command(subcommand)]
         action: BehaviorAction,
     },
+    /// Manage Claude accounts
+    Accounts {
+        #[command(subcommand)]
+        action: AccountsAction,
+    },
     /// Reconcile AGENTS.md from disk
     Sync,
+    /// Re-link a skill or behavior whose source has moved
+    Update {
+        name: Option<String>,
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        path: Option<String>,
+    },
     /// Show installed skills and behaviors
     List,
     /// Print the version
@@ -42,10 +67,27 @@ pub enum BehaviorAction {
     Add {
         #[arg(required = true)]
         names: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
     /// Remove behavior(s)
     Remove {
         #[arg(required = true)]
         names: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum AccountsAction {
+    /// List registered accounts
+    List,
+    /// Remove an account from the registry (registry only — no disk changes)
+    Remove {
+        #[arg(required = true)]
+        name: String,
+    },
+    /// Re-wire any registered account that's broken on disk
+    Sync,
 }

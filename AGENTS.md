@@ -1,117 +1,98 @@
 # lore — development context
 
+## Read the docs first
+
+`docs/` is the source of truth for what lore does and how it's built —
+start at [docs/index.md](docs/index.md). Docs are the cognitive model of
+the system; code is the implementation detail. This file is a thin,
+doc-external supplement (setup, conventions, pointers) — never a second
+copy of anything `docs/` already explains, since a duplicate is one more
+place to go stale.
+
+**Before touching command behavior, invariants, symlink/config internals,
+or the release pipeline, read the matching file under
+`docs/functional/`, `docs/implementation/`, or `docs/infra/` first** —
+don't rely on your own reading of the code or on memory of a past session.
+Each `implementation/*.md` file's "What breaks if this is touched" section
+is the fastest way to check whether a change is safe. If a doc file is
+missing or doesn't cover what you need, that's a gap to flag (or fix via
+the `corpus` skill) — not license to skip reading and guess instead.
+
 ## What this is
 
-lore is a Rust CLI that manages AI agent skills and behaviors via symlinks.
-One universal config dir at `~/.agents/`, Claude wired via `~/.claude/`.
+lore is a Rust CLI that manages AI agent skills and behaviors via
+symlinks. See [docs/index.md](docs/index.md) for the full model.
 
 ## Repo structure
 
 ```
 lore/
-├── src/              ← Rust source
-│   ├── lib.rs
-│   ├── main.rs
-│   ├── cli.rs
-│   ├── output.rs
-│   ├── paths.rs
-│   ├── symlink.rs
-│   ├── agents_md.rs
-│   └── commands/
+├── src/              ← Rust source (see docs/implementation/index.md)
+│   ├── lib.rs, main.rs, cli.rs        ← entry point + dispatch
+│   ├── config.rs, paths.rs, wire.rs   ← config/account/wiring layer
+│   ├── symlink.rs, output.rs          ← low-level primitives
+│   ├── agents_md.rs                   ← AGENTS.md/LORE.md parser
+│   └── commands/                      ← one module per subcommand
 ├── tests/integration/
 ├── .githooks/        ← local git hooks (opt-in)
 ├── .github/workflows/
 ├── install.sh        ← installs lore to ~/.local/bin
-├── Cargo.toml
-├── README.md
+├── docs/             ← corpus-generated reference — start here
 ├── AGENTS.md         ← you are here
-├── CLAUDE.md         ← @AGENTS.md
-└── docs/
-    └── reference.md  ← full command and format reference
+└── CLAUDE.md         ← @AGENTS.md
 ```
 
 ## Local setup
-
-After cloning, activate the pre-push hook to run `cargo test + clippy` before each push:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-This is opt-in — the hook is not forced on contributors.
-
-## Release process
-
-`release-please` watches `main` (stable) and `dev` (beta pre-release) and parses
-the **squash-merge commit subject** of every merge — not the individual commits
-inside the PR. That subject must be a conventional commit (`feat:`, `fix:`,
-`chore:`, `refactor:`, etc.) or release-please silently finds nothing to release.
-
-- When merging a PR into `main` or `dev`, set the squash-merge commit title to a
-  conventional commit message — GitHub defaults to the PR title, so title PRs
-  accordingly.
-- Tags are plain `v<version>` (`include-component-in-tag: false` in
-  `release-please-config.json`) — this must keep matching the `v*` trigger in
-  `.github/workflows/release.yml`.
-- To pin a specific version on a release PR (e.g. bootstrapping the first
-  release), add a `Release-As: X.Y.Z` footer to the triggering commit.
-
-## Architecture
-
-Everything reduces to three operations:
-
-1. **Symlink management** — create/remove links in `~/.agents/skills/` or `~/.agents/behaviors/`
-2. **AGENTS.md edits** — `AgentsMd` struct parses, mutates, and re-serializes the file
-3. **Claude wiring** — write `@AGENTS_MD` to `~/.claude/CLAUDE.md`, symlink `~/.claude/skills`
+Activates the pre-push hook (`cargo test` + `cargo clippy`). See
+[docs/infra/release-and-distribution.md](docs/infra/release-and-distribution.md)
+for why it's opt-in and what CI already gates on every push.
 
 ## Coding conventions
 
-- Rust. Deps: `clap` (derive), `anyhow`, `dirs`. Dev: `assert_cmd`, `tempfile`, `predicates`.
-- All commands return `anyhow::Result<()>`. Dispatch in `lib.rs::run()`.
-- Command functions in `src/commands/`. Utils in `src/`.
-- Output: `ok()` for success, `warn()` for non-fatal issues, `note()` for indented sub-info.
+This section is intentionally a short pointer list, not the full
+corpus convention template (no separate Error Handling / Async Conventions
+/ Commit Format subsections) — lore is a small, synchronous CLI with one
+error type (`anyhow::Result`) and no async code, so those categories would
+be empty or redundant with the point below. Extend this list, not the
+template shape, if that ever stops being true.
 
-## Key invariants — do not break
-
-1. `lore init` is idempotent — safe to re-run at any time
-2. Uninstalling never modifies source repos — only removes symlinks
-3. `behavior add` is idempotent — checks AGENTS.md before appending
-4. AGENTS.md block format is exactly two lines: `<!-- name -->` then `@/absolute/path`
-5. `init` case 2 must never lose existing CLAUDE.md content — always migrates to `from-claude`
-6. Broken symlinks must appear in `lore list` (use `/*` glob, not `*/`)
-
-## AGENTS.md block format
-
-Every behavior entry is exactly this:
-
-```
-<!-- name -->
-@/absolute/path/to/entry.md
-```
-
-The comment is the lookup key for removal (`AgentsMd::remove_by_name`).
-The `@path` is what Claude imports. Always absolute paths.
+- Rust. Deps: `clap` (derive), `anyhow`, `dirs`, `serde` (derive), `toml`.
+  Dev: `assert_cmd`, `tempfile`, `predicates`.
+- All commands return `anyhow::Result<()>`. Dispatch happens in
+  `lib.rs::run()` — see [docs/implementation/cli.md](docs/implementation/cli.md).
+- Command functions live in `src/commands/`, one module per subcommand.
+  Shared utilities live directly in `src/`.
+- Output helpers: `ok()` for success, `warn()` for non-fatal issues,
+  `note()` for indented sub-info.
+- `AGENTS.md`/`LORE.md`'s block format and every config/wiring contract
+  (config path resolution, account registry shape, etc.) are documented in
+  [docs/functional/agent-config/index.md](docs/functional/agent-config/index.md)
+  and [docs/implementation/accounts/index.md](docs/implementation/accounts/index.md)
+  — read those rather than re-deriving the format from `agents_md.rs`.
 
 ## Testing without touching real config
 
 ```bash
-AGENTS_DIR=/tmp/lore-test lore init
+echo 'agents_dir = "/tmp/lore-test/agents"' > /tmp/lore-test.toml
+export LORE_CONF=/tmp/lore-test.toml
+lore init
 
 mkdir -p /tmp/fake/skills/my-skill && touch /tmp/fake/skills/my-skill/SKILL.md
-cd /tmp/fake/skills && AGENTS_DIR=/tmp/lore-test lore install my-skill
+cd /tmp/fake/skills && lore install my-skill
 
 mkdir -p /tmp/fake/behaviors/my-rules && touch /tmp/fake/behaviors/my-rules/RULES.md
-cd /tmp/fake/behaviors && AGENTS_DIR=/tmp/lore-test lore behavior add my-rules
+cd /tmp/fake/behaviors && lore behavior add my-rules
 
-AGENTS_DIR=/tmp/lore-test lore list
-cat /tmp/lore-test/AGENTS.md
+lore list
+cat /tmp/lore-test/agents/AGENTS.md
 ```
 
 ## Planned work
 
-- **Multi-account support**: Claude supports `~/.claude-<account>/` dirs. The design
-  (one base `~/.agents/` + per-account overrides, or fully independent instances)
-  is not finalized. This is a breaking surface — design carefully before touching init.
-- **`lore update`**: re-link skills after a repo has moved on disk.
-- **Additional tool integrations**: Cursor, Windsurf, Zed — each needs its own wiring
-  in `commands/init.rs`, modeled after the Claude integration.
+- **Additional tool integrations**: Cursor, Windsurf, Zed — each needs its
+  own wiring in `commands/init.rs`, modeled after the Claude integration.
