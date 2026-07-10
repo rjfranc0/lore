@@ -75,9 +75,9 @@ answers "does the thing this points at actually exist as a directory right
 now." A symlink is **broken** exactly when `is_link(path) && !is_live(path)`
 — this exact combination is how `lore list` decides whether to print
 `✗ broken`, how `accounts sync` (see
-[@/implementation/accounts.md]) decides whether an account needs
+[@/implementation/accounts/index.md]) decides whether an account needs
 re-wiring, and how `lore update --all` finds its candidates (see
-[@/functional/agent-config.md#feature-update]) — three independent inline
+[@/functional/agent-config/update.md#feature-update]) — three independent inline
 copies of the same check, not a shared helper. Collapsing these two checks
 into one (e.g. just using `is_dir()`
 everywhere) would make a broken symlink indistinguishable from "nothing is
@@ -101,7 +101,7 @@ prefixing.
 
 `commands/install.rs`, `remove.rs`, `behavior.rs`, `list.rs`, `sync.rs`,
 `update.rs` all start with `Paths::load()` (see
-[@/implementation/accounts.md#module-pathsrs] — `Paths` is owned by the
+[@/implementation/accounts/config.md#module-pathsrs] — `Paths` is owned by the
 config layer, not this one, since it has to know about `LoreConfig` to
 resolve `agents_dir`) — `update.rs` differs only in shape, not substance:
 its core logic (`update_one`/`update_all`) takes `&Paths` and the resolved
@@ -110,24 +110,102 @@ its core logic (`update_one`/`update_all`) takes `&Paths` and the resolved
 `tempfile::tempdir()`-backed `Paths` with no real cwd or env dependency;
 only the thin `run()` wrapper touches that I/O. From there:
 
-- **install/remove** (skills): thin wrappers directly over
-  `symlink::create`/`is_link` plus a trailing-slash strip
-  (`name.trim_end_matches('/')`) so tab-completion's `my-skill/` and a
-  hand-typed `my-skill` resolve to the same path.
-- **behavior add/remove**: the same symlink operations, plus
-  loading/mutating/saving an `AgentsMd` for the `@import` bookkeeping.
-  `remove` additionally distinguishes a symlinked behavior (removable) from
-  a real directory (`is_link` false but `path.is_dir()` true) — that's the
+- **install/remove** (skills): each takes an `account: Option<String>` and
+  branches on it. **Shared** (`None`): the original thin
+  `symlink::create`/`is_link` logic against `~/.agents/skills/`, plus a
+  fan-out loop over every registered account calling
+  `wire::relink_skill`/`unlink_account_skill` (see
+  [@/implementation/accounts/wire.md#module-wirers]) so the same install/remove
+  reaches every account in one command. **Scoped** (`Some(name)`): resolves
+  `name` via `LoreConfig::require_account_path` (bailing if unregistered)
+  and applies the same symlink-create/remove logic directly against that
+  one account's skills dir instead of the shared one — `~/.agents/skills/`
+  and every other account are never touched. The **scoped** path validates
+  `name` via `config::validate_account_name` before resolving it, same as
+  every other `--account`-scoped command. Both paths (and `behavior
+  add`/`remove`'s scoped/shared functions below) share one trailing-slash
+  strip, `commands::normalize_name` (`raw.trim_end_matches('/')`, defined
+  once in `commands/mod.rs`) — factored out of what used to be independent
+  inline copies per command — so tab-completion's `my-skill/` and a
+  hand-typed `my-skill` resolve to the same path everywhere a name is taken
+  as an argument.
+- **behavior add/remove**: like install/remove, each takes an `account:
+  Option<String>` and dispatches — `add`/`remove` are thin wrappers that
+  branch to `add_shared`/`add_scoped` or `remove_shared`/`remove_scoped`.
+  Those four are themselves thin: each resolves its own `behaviors_dir`
+  and markdown-file path (`~/.agents/behaviors/` + `AGENTS.md` for shared;
+  `wire::claude_behaviors_path(&claude_dir)` + that account's `LORE.md`
+  for scoped, after resolving `name` via `LoreConfig::require_account_path`
+  and guarding on the account's `LORE.md` already existing — bailing with
+  a `lore init --account <name>` pointer if not) and hand off to one
+  shared implementation: `link_and_register` (symlink-create/register,
+  used by both add paths) and `unlink_and_deregister` (symlink-remove/
+  deregister, used by both remove paths), parameterized over that
+  directory/markdown-file pair plus a label or not-installed-message
+  closure for the shared-vs-scoped wording difference — so the actual
+  link+register / unlink+deregister business rule lives in exactly one
+  place regardless of which tree it targets. The shared tree is never
+  touched by a scoped call, and vice versa. `unlink_and_deregister`
+  additionally distinguishes a symlinked behavior (removable) from a real
+  directory (`is_link` false but `path.is_dir()` true) — that's the
   built-in-behavior protection described in
-  [@/functional/agent-config.md#feature-behavior-add--remove].
-- **sync**: walks `AgentsMd.behaviors`, drops any entry whose
-  `behaviors_dir.join(&b.name)` isn't a directory (stale), then walks
-  `behaviors_dir` on disk and adds any directory not yet in `AgentsMd`
-  (missing) — a single pass each direction, no cross-checking beyond
-  directory existence.
-- **list**: reads both `skills_dir` and `behaviors_dir`, sorted by
-  filename, printing target + liveness for symlinks or a
-  `(migrated)`/`(built-in)` tag for real directories.
+  [@/functional/agent-config/behaviors.md#feature-behavior-add--remove]; the scoped
+  call's warning names that account's `LORE.md` path instead of the
+  shared `AGENTS.md`.
+- **sync**: two passes sharing one helper, `reconcile_behaviors(md: &mut
+  AgentsMd, behaviors_dir: &Path) -> Result<(Vec<String>, Vec<String>)>`.
+  The helper mutates `md` in place — drops any entry whose
+  `behaviors_dir.join(&b.name)` isn't a directory (stale, via
+  `md.remove_by_name`), then walks `behaviors_dir` on disk and adds any
+  directory not yet in `AgentsMd` (missing, via `md.add`/
+  `md.contains_path`) — a single pass each direction, no cross-checking
+  beyond directory existence — and returns `(added, removed)` names without
+  printing or saving, so each caller owns its own messaging/persistence.
+  Pass 1 calls it against the shared `AgentsMd`/`~/.agents/behaviors/`
+  exactly as before (byte-identical messages: `Removed stale entry: {name}`
+  / `Added {name} to AGENTS.md`). Pass 2 loops `config.accounts`
+  (`BTreeMap`, alphabetical), and for each one whose `LORE.md` exists
+  (missing `LORE.md` is a `warn`-and-`continue`, not a bail): compares
+  `md.header`'s first line against the canonical `@{agents_md}\n` and
+  restores it on drift, then calls the same helper against
+  `wire::claude_behaviors_path(&claude_dir)` with per-account wording
+  (`Removed stale entry from {name}: {n}` / `Added {name}/{n} to
+  LORE.md`). A `total_changes` counter spans both passes: zero total
+  changes always prints one collapsed `✓ Already in sync`, regardless of
+  how many accounts are registered; otherwise it emits granular per-target
+  "already in sync" lines for whichever targets didn't change.
+- **list**: a shared `collect_dir_entries(dir, indent, real_dir_label,
+  skip_relink_target)` helper reads a single directory, sorted by filename,
+  rendering target + liveness for symlinks or a `(migrated)`/`(built-in)`
+  tag for real directories, `(none)` if nothing qualified, and returns
+  `(rendered_text, found_any)` so callers can also decide whether a section
+  is worth printing at all (`print_dir_entries` is a thin wrapper that
+  discards the bool for the shared, always-printed sections). `run()` calls
+  it once each for the shared `skills_dir`/`behaviors_dir` (`Shared
+  skills:`/`Shared behaviors:`, no filtering), then once each per
+  registered account — **`default` included** — via `wire::claude_skills_path`/
+  `claude_behaviors_path`, i.e. the exact same account-directory resolution
+  every other account gets, not a hardcoded shared-tree path. The account
+  skills call passes `skip_relink_target: Some(&p.skills_dir)` — entries
+  whose symlink target is exactly `skills_dir.join(name)` are shared-skill
+  re-links (see `wire::relink_skill`, [@/implementation/accounts/wire.md#module-wirers]),
+  not account-owned installs, so they're skipped there since they're
+  already printed once under `Shared skills:`. The account behaviors call
+  passes `None`: `behavior add --account` (see above) always symlinks
+  straight to the source repo, never through a shared re-link, so no such
+  entry can exist to filter.
+
+  **Only the `Account: <name>` header's print is conditional, not the loop
+  itself**: a section is skipped exactly when `name == "default"` *and*
+  both `has_skills`/`has_behaviors` (the bool each `collect_dir_entries`
+  call returns) come back false. Any other account always gets a section,
+  even when fully empty (rendered as two `(none)` sub-sections) — that's
+  what distinguishes "registered but empty" from "not registered" for a
+  named account. For `default` specifically, staying silent only when it
+  has nothing account-specific to show is what keeps a bare `lore init`
+  from growing a permanent empty `Account: default` section, while still
+  surfacing a skill or behavior installed with `--account default` under
+  its own section, exactly like any other account.
 - **update**: `locate` checks `skills_dir` before `behaviors_dir` for a
   given name. Relinking is unconditional — it never checks current link
   health first, just removes any existing symlink and recreates it (the
@@ -159,7 +237,17 @@ only the thin `run()` wrapper touches that I/O. From there:
 - Removing the `is_link`/`is_live` distinction (e.g. "simplifying" to one
   check) silently changes what `list` and `accounts sync` consider broken
   vs. absent.
+- `list`'s account-section re-link filter (`print_dir_entries`'s
+  `skip_relink_target`) depends on exact path equality with the target
+  `wire::relink_skill` writes (`skills_dir.join(name)`). If either side's
+  join convention changes independently, the filter silently stops
+  matching — an account section would start double-listing shared
+  re-links (or swallowing real account skills) with no error.
 - Sorting `update --all`'s broken-candidate list (e.g. to match `list`'s
   sorted output) would change prompt order for anyone with multiple broken
   entries of the same kind — a behavior change for users mid-recovery, not
   just an internal cleanup.
+- Reintroducing an unconditional exclusion of `default` from `list`'s
+  account loop (instead of gating only the empty-section print on it)
+  would hide any skill or behavior installed via `--account default`, even
+  though it's registered and wired exactly like any other account.

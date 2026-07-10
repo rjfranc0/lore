@@ -54,3 +54,152 @@ fn warns_but_exits_0_when_not_installed() {
         .success()
         .stdout(predicates::str::contains("not installed"));
 }
+
+#[test]
+fn shared_remove_deletes_symlink_and_account_relinks() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+
+    let src = env.home.path().join("src");
+    make_skill(&src, "shared-gone");
+    env.lore()
+        .arg("install")
+        .arg("shared-gone")
+        .current_dir(&src)
+        .assert()
+        .success();
+    assert!(env.account_skills("work").join("shared-gone").is_symlink());
+
+    env.lore()
+        .arg("remove")
+        .arg("shared-gone")
+        .assert()
+        .success();
+
+    assert!(!env.agents_dir.join("skills/shared-gone").exists());
+    assert!(!env.account_skills("work").join("shared-gone").exists());
+}
+
+#[test]
+fn shared_remove_preserves_differently_sourced_scoped_skill() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+
+    let src_a = env.home.path().join("src-a");
+    make_skill(&src_a, "foo");
+    env.lore()
+        .arg("install")
+        .arg("foo")
+        .arg("--account")
+        .arg("work")
+        .current_dir(&src_a)
+        .assert()
+        .success();
+
+    let src_b = env.home.path().join("src-b");
+    make_skill(&src_b, "foo");
+    env.lore()
+        .arg("install")
+        .arg("foo")
+        .current_dir(&src_b)
+        .assert()
+        .success();
+
+    // work's foo is still the scoped install from src_a, not a re-link of the shared one.
+    assert_eq!(
+        std::fs::read_link(env.account_skills("work").join("foo")).unwrap(),
+        src_a.join("foo")
+    );
+
+    env.lore().arg("remove").arg("foo").assert().success();
+
+    assert!(!env.agents_dir.join("skills/foo").exists());
+    assert!(env.account_skills("work").join("foo").is_symlink());
+    assert_eq!(
+        std::fs::read_link(env.account_skills("work").join("foo")).unwrap(),
+        src_a.join("foo")
+    );
+}
+
+#[test]
+fn account_remove_only_affects_targeted_account() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    env.register_account("personal");
+
+    let src = env.home.path().join("src");
+    make_skill(&src, "multi-acct-skill");
+    env.lore()
+        .arg("install")
+        .arg("multi-acct-skill")
+        .current_dir(&src)
+        .assert()
+        .success();
+
+    env.lore()
+        .arg("remove")
+        .arg("multi-acct-skill")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    assert!(!env.account_skills("work").join("multi-acct-skill").exists());
+    assert!(env.agents_dir.join("skills/multi-acct-skill").is_symlink());
+    assert!(
+        env.account_skills("personal")
+            .join("multi-acct-skill")
+            .is_symlink()
+    );
+}
+
+#[test]
+fn account_remove_normalizes_trailing_slash() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+
+    let src = env.home.path().join("src");
+    make_skill(&src, "tabremove-work");
+    env.lore()
+        .arg("install")
+        .arg("tabremove-work")
+        .arg("--account")
+        .arg("work")
+        .current_dir(&src)
+        .assert()
+        .success();
+
+    env.lore()
+        .arg("remove")
+        .arg("tabremove-work/")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    assert!(
+        !env.account_skills("work")
+            .join("tabremove-work")
+            .is_symlink()
+    );
+}
+
+#[test]
+fn account_remove_warns_but_exits_0_when_not_installed() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+
+    env.lore()
+        .arg("remove")
+        .arg("nonexistent")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("not installed"));
+}

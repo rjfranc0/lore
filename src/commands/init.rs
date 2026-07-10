@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     agents_md::{AgentsMd, behavior_entry},
-    config::LoreConfig,
+    config::{self, LoreConfig},
     output,
     paths::Paths,
     symlink, wire,
@@ -15,17 +15,7 @@ const AGENTS_MD_HEADER: &str = "\
 
 pub fn run(account: Option<String>) -> Result<()> {
     if let Some(name) = &account {
-        if name.is_empty() {
-            anyhow::bail!("invalid account name: must not be empty");
-        }
-        if let Some(bad) = name
-            .chars()
-            .find(|c| !c.is_ascii_alphanumeric() && *c != '-')
-        {
-            anyhow::bail!(
-                "invalid account name '{name}': only alphanumeric characters and hyphens are allowed (found '{bad}')"
-            );
-        }
+        config::validate_account_name(name)?;
     }
 
     let config_path = LoreConfig::config_path();
@@ -51,83 +41,48 @@ pub fn run(account: Option<String>) -> Result<()> {
     std::fs::create_dir_all(&p.skills_dir)?;
     std::fs::create_dir_all(&p.behaviors_dir)?;
 
-    let claude_md = wire::claude_md_path(&claude_dir);
     let claude_skills = wire::claude_skills_path(&claude_dir);
 
     // ── AGENTS.MD ─────────────────────────────────────────────────────────────
 
     if !p.agents_md.exists() {
-        let should_migrate = if claude_md.exists() {
-            let content = std::fs::read_to_string(&claude_md)?;
-            let already_points = content.contains(&format!("@{}", p.agents_md.display()));
-            let has_content = !content.trim().is_empty();
-            has_content && !already_points
-        } else {
-            false
-        };
+        let mut md = AgentsMd::parse(AGENTS_MD_HEADER);
 
-        if should_migrate {
-            // Case 2: migrate existing CLAUDE.md
-            let from_dir = p.behaviors_dir.join("from-claude");
-            std::fs::create_dir_all(&from_dir)?;
-            let rules = from_dir.join("RULES.md");
-            std::fs::copy(&claude_md, &rules)?;
-
-            let mut md = AgentsMd::parse(AGENTS_MD_HEADER);
-            md.add("from-claude".into(), rules.clone());
-            md.save(&p.agents_md)?;
-
-            output::ok(&format!("Migrated CLAUDE.md → {}", rules.display()));
-            output::ok(&format!("Created {}", p.agents_md.display()));
-            output::note("");
-            output::note(&format!(
-                "Your old instructions live at:  {}",
-                rules.display()
-            ));
-            output::note(&format!(
-                "Do not edit:                    {}",
-                claude_md.display()
-            ));
-            output::note(&format!(
-                "Do not edit:                    {}",
-                p.agents_md.display()
-            ));
-            output::note("Both are managed by lore.");
-        } else {
-            // Case 1: clean install (or recovery)
-            let mut md = AgentsMd::parse(AGENTS_MD_HEADER);
-
-            // Re-register any behaviors already on disk (recovery path)
-            if p.behaviors_dir.exists() {
-                let mut entries: Vec<_> = std::fs::read_dir(&p.behaviors_dir)?
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .collect();
-                entries.sort_by_key(|e| e.file_name());
-                for entry in entries {
-                    let bname = entry.file_name().to_string_lossy().to_string();
-                    if let Ok(ep) = behavior_entry(&entry.path()) {
-                        md.add(bname.clone(), ep);
-                        output::warn(&format!("Re-registered existing behavior: {bname}"));
-                    }
+        // Re-register any behaviors already on disk (recovery path)
+        if p.behaviors_dir.exists() {
+            let mut entries: Vec<_> = std::fs::read_dir(&p.behaviors_dir)?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .collect();
+            entries.sort_by_key(|e| e.file_name());
+            for entry in entries {
+                let bname = entry.file_name().to_string_lossy().to_string();
+                if let Ok(ep) = behavior_entry(&entry.path()) {
+                    md.add(bname.clone(), ep);
+                    output::warn(&format!("Re-registered existing behavior: {bname}"));
                 }
             }
-
-            md.save(&p.agents_md)?;
-            output::ok(&format!("Created {}", p.agents_md.display()));
         }
+
+        md.save(&p.agents_md)?;
+        output::ok(&format!("Created {}", p.agents_md.display()));
     } else {
         output::ok("AGENTS.md exists — skipping");
     }
 
-    // ── Migrate existing real skills dir ──────────────────────────────────────
+    // ── Migrate existing real skills dir (default account bootstrap only) ─────
+    // Named accounts never get their real skills moved into the shared pool —
+    // that would leak account-specific skills into every other account.
 
-    if claude_skills.exists() && !symlink::is_link(&claude_skills) {
+    if account_name == "default" && claude_skills.exists() && !symlink::is_link(&claude_skills) {
         let mut moved = 0usize;
         let mut collision = false;
 
         for entry in std::fs::read_dir(&claude_skills)? {
             let entry = entry?;
+            if symlink::is_link(&entry.path()) {
+                continue;
+            }
             let name = entry.file_name();
             let dst = p.skills_dir.join(&name);
             if dst.exists() || symlink::is_link(&dst) {
@@ -151,9 +106,7 @@ pub fn run(account: Option<String>) -> Result<()> {
         }
 
         // Try to remove the now-empty dir
-        let _ = std::fs::remove_dir(&claude_skills);
-
-        if collision && claude_skills.exists() && !symlink::is_link(&claude_skills) {
+        if collision {
             anyhow::bail!(
                 "{} still has unresolved skill collisions (see warnings above).\nResolve conflicts manually, then re-run: lore init",
                 claude_skills.display()
@@ -163,7 +116,21 @@ pub fn run(account: Option<String>) -> Result<()> {
 
     // ── Wire Claude ───────────────────────────────────────────────────────────
 
-    wire::wire_claude_dir(&p.agents_md, &p.skills_dir, &claude_dir)?;
+    let (migration_behaviors_dir, migration_register_md) = if account_name == "default" {
+        (p.behaviors_dir.clone(), p.agents_md.clone())
+    } else {
+        (
+            wire::claude_behaviors_path(&claude_dir),
+            wire::lore_md_path(&claude_dir),
+        )
+    };
+    wire::wire_claude_dir(
+        &p.agents_md,
+        &p.skills_dir,
+        &claude_dir,
+        &migration_behaviors_dir,
+        &migration_register_md,
+    )?;
 
     // ── Register account ─────────────────────────────────────────────────────
 

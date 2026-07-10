@@ -70,8 +70,34 @@ impl Env {
         self.claude_dir.join("CLAUDE.md")
     }
 
+    pub fn lore_md(&self) -> PathBuf {
+        self.claude_dir.join("LORE.md")
+    }
+
     pub fn claude_skills(&self) -> PathBuf {
         self.claude_dir.join("skills")
+    }
+
+    /// Registers a named account via `lore init --account <name>`.
+    pub fn register_account(&self, name: &str) {
+        self.lore()
+            .arg("init")
+            .arg("--account")
+            .arg(name)
+            .assert()
+            .success();
+    }
+
+    pub fn account_skills(&self, name: &str) -> PathBuf {
+        self.home.path().join(format!(".claude-{name}/skills"))
+    }
+
+    pub fn account_behaviors(&self, name: &str) -> PathBuf {
+        self.home.path().join(format!(".claude-{name}/behaviors"))
+    }
+
+    pub fn account_lore_md(&self, name: &str) -> PathBuf {
+        self.home.path().join(format!(".claude-{name}/LORE.md"))
     }
 }
 

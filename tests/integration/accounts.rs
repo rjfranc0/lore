@@ -84,7 +84,88 @@ fn two_named_accounts_register_independently() {
 }
 
 #[test]
-fn sync_rewires_broken_skills_symlink() {
+fn named_account_creates_own_lore_md_importing_shared_agents_md() {
+    let env = Env::new();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let work_lore_md = env.home.path().join(".claude-work/LORE.md");
+    assert!(work_lore_md.is_file());
+    let content = std::fs::read_to_string(&work_lore_md).unwrap();
+    assert!(content.contains(&format!("@{}", env.agents_md().display())));
+}
+
+#[test]
+fn account_migration_registers_in_own_lore_md_not_shared_agents_md() {
+    let env = Env::new();
+    let work_dir = env.home.path().join(".claude-work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    std::fs::write(work_dir.join("CLAUDE.md"), "# work notes\nbe nice\n").unwrap();
+
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let rules = work_dir.join("behaviors/from-claude/RULES.md");
+    assert!(rules.is_file());
+    assert!(
+        std::fs::read_to_string(&rules)
+            .unwrap()
+            .contains("work notes")
+    );
+
+    let work_lore_md = std::fs::read_to_string(work_dir.join("LORE.md")).unwrap();
+    assert!(work_lore_md.contains("from-claude"));
+
+    // Shared AGENTS.md must stay oblivious to this account-scoped migration.
+    let agents_md = std::fs::read_to_string(env.agents_md()).unwrap();
+    assert!(!agents_md.contains("from-claude"));
+}
+
+#[test]
+fn account_migration_is_idempotent_single_from_claude_block() {
+    let env = Env::new();
+    let work_dir = env.home.path().join(".claude-work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    std::fs::write(work_dir.join("CLAUDE.md"), "# work notes\nbe nice\n").unwrap();
+
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+    let claude_md_after_first = std::fs::read_to_string(work_dir.join("CLAUDE.md")).unwrap();
+
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+    let claude_md_after_second = std::fs::read_to_string(work_dir.join("CLAUDE.md")).unwrap();
+
+    assert_eq!(claude_md_after_first, claude_md_after_second);
+
+    let work_lore_md = std::fs::read_to_string(work_dir.join("LORE.md")).unwrap();
+    assert_eq!(
+        work_lore_md
+            .lines()
+            .filter(|l| l.trim() == "<!-- from-claude -->")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn sync_rewires_missing_skills_dir() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
     env.lore()
@@ -95,17 +176,17 @@ fn sync_rewires_broken_skills_symlink() {
         .success();
 
     let work_skills = env.home.path().join(".claude-work/skills");
-    assert!(work_skills.is_symlink());
-    std::fs::remove_file(&work_skills).unwrap();
+    assert!(work_skills.is_dir() && !work_skills.is_symlink());
+    std::fs::remove_dir_all(&work_skills).unwrap();
     assert!(!work_skills.exists());
 
     env.lore().arg("accounts").arg("sync").assert().success();
 
-    assert!(work_skills.is_symlink());
+    assert!(work_skills.is_dir() && !work_skills.is_symlink());
 }
 
 #[test]
-fn sync_rewires_skills_path_replaced_by_real_directory() {
+fn sync_rewires_skills_path_replaced_by_stray_symlink() {
     let env = Env::new();
     env.lore().arg("init").assert().success();
     env.lore()
@@ -116,14 +197,14 @@ fn sync_rewires_skills_path_replaced_by_real_directory() {
         .success();
 
     let work_skills = env.home.path().join(".claude-work/skills");
-    assert!(work_skills.is_symlink());
-    std::fs::remove_file(&work_skills).unwrap();
-    std::fs::create_dir(&work_skills).unwrap();
     assert!(work_skills.is_dir() && !work_skills.is_symlink());
+    std::fs::remove_dir_all(&work_skills).unwrap();
+    std::os::unix::fs::symlink(env.agents_dir.join("skills"), &work_skills).unwrap();
+    assert!(work_skills.is_symlink());
 
     env.lore().arg("accounts").arg("sync").assert().success();
 
-    assert!(work_skills.is_symlink());
+    assert!(work_skills.is_dir() && !work_skills.is_symlink());
 }
 
 #[test]
@@ -175,6 +256,91 @@ fn sync_rewires_claude_md_replaced_by_symlink_to_elsewhere() {
     let content = std::fs::read_to_string(&work_md).unwrap();
     assert!(content.starts_with('@'));
     assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "decoy content\n");
+}
+
+#[test]
+fn sync_recreates_deleted_lore_md() {
+    let env = Env::new();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let work_lore_md = env.home.path().join(".claude-work/LORE.md");
+    std::fs::remove_file(&work_lore_md).unwrap();
+    assert!(!work_lore_md.exists());
+
+    env.lore()
+        .arg("accounts")
+        .arg("sync")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Re-wired account: work"));
+
+    assert!(work_lore_md.is_file());
+    let content = std::fs::read_to_string(&work_lore_md).unwrap();
+    assert!(content.contains(&format!("@{}", env.agents_md().display())));
+}
+
+#[test]
+fn sync_rewires_claude_md_missing_lore_import() {
+    let env = Env::new();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let work_md = env.home.path().join(".claude-work/CLAUDE.md");
+    std::fs::write(&work_md, "").unwrap();
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    let work_lore_md = env.home.path().join(".claude-work/LORE.md");
+    let content = std::fs::read_to_string(&work_md).unwrap();
+    assert!(content.contains(&format!("@{}", work_lore_md.display())));
+}
+
+#[test]
+fn sync_heals_non_utf8_claude_md() {
+    let env = Env::new();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let work_md = env.home.path().join(".claude-work/CLAUDE.md");
+    std::fs::write(&work_md, b"\xff\xfe\x00\x80 not valid utf8").unwrap();
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    let work_lore_md = env.home.path().join(".claude-work/LORE.md");
+    let content = std::fs::read_to_string(&work_md).unwrap();
+    assert!(content.contains(&format!("@{}", work_lore_md.display())));
+}
+
+#[test]
+fn sync_heals_non_utf8_lore_md() {
+    let env = Env::new();
+    env.lore()
+        .arg("init")
+        .arg("--account")
+        .arg("work")
+        .assert()
+        .success();
+
+    let work_lore_md = env.home.path().join(".claude-work/LORE.md");
+    std::fs::write(&work_lore_md, b"\xff\xfe\x00\x80 not valid utf8").unwrap();
+
+    env.lore().arg("accounts").arg("sync").assert().success();
+
+    let content = std::fs::read_to_string(&work_lore_md).unwrap();
+    assert!(content.contains(&format!("@{}", env.agents_md().display())));
 }
 
 #[test]
@@ -405,12 +571,18 @@ fn two_accounts_isolated() {
         .success();
 
     let work_dir = env.home.path().join(".claude-work");
+    let work_lore_md = work_dir.join("LORE.md");
+
     let default_md = std::fs::read_to_string(env.claude_md()).unwrap();
     let work_md = std::fs::read_to_string(work_dir.join("CLAUDE.md")).unwrap();
+    assert!(default_md.contains(&format!("@{}", env.lore_md().display())));
+    assert!(work_md.contains(&format!("@{}", work_lore_md.display())));
 
-    assert!(default_md.contains(&format!("@{}", env.agents_md().display())));
-    assert!(work_md.contains(&format!("@{}", env.agents_md().display())));
+    let default_lore_md = std::fs::read_to_string(env.lore_md()).unwrap();
+    let work_lore_md_content = std::fs::read_to_string(&work_lore_md).unwrap();
+    assert!(default_lore_md.contains(&format!("@{}", env.agents_md().display())));
+    assert!(work_lore_md_content.contains(&format!("@{}", env.agents_md().display())));
 
-    assert!(env.claude_skills().is_symlink());
-    assert!(work_dir.join("skills").is_symlink());
+    assert!(env.claude_skills().is_dir() && !env.claude_skills().is_symlink());
+    assert!(work_dir.join("skills").is_dir() && !work_dir.join("skills").is_symlink());
 }

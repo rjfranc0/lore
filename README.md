@@ -66,7 +66,8 @@ After `lore init`, your layout looks like this:
 └── behaviors/         ← symlinks → behavior dirs in your repos
 
 ~/.claude/
-├── CLAUDE.md          ← @~/.agents/AGENTS.md  (written by lore init)
+├── LORE.md            ← @~/.agents/AGENTS.md  (written by lore init)
+├── CLAUDE.md          ← @~/.claude/LORE.md  (lore only ensures this one line)
 └── skills/            ← symlink → ~/.agents/skills/
 ```
 
@@ -92,13 +93,13 @@ The full write-up of every command and file format lives in [docs/index.md](docs
 
 ## Already have a Claude setup?
 
-You don't have to clean anything up first. `lore init` notices an existing `~/.claude/CLAUDE.md` and migrates it for you:
+You don't have to clean anything up first. `lore init` notices existing content in `~/.claude/CLAUDE.md` and migrates it for you, surgically:
 
-- Your old instructions move to `~/.agents/behaviors/from-claude/RULES.md`
+- A copy of your old instructions moves to `~/.agents/behaviors/from-claude/RULES.md`
 - Any skills sitting in `~/.claude/skills/` move into `~/.agents/skills/`
-- `~/.claude/CLAUDE.md` is replaced with a single `@import` pointing at your new config
+- `~/.claude/CLAUDE.md` keeps its original content exactly as it was — lore only appends a `@~/.claude/LORE.md` import line underneath it
 
-Nothing gets thrown away, and lore prints exactly where each piece landed. If a skill name would collide with one you already have, lore stops before changing anything and tells you what to resolve — better a clear halt than a half-migrated mess. And if you ever delete `AGENTS.md` by accident, re-running `lore init` rebuilds it from the behaviors still on disk.
+Nothing gets thrown away or overwritten, and lore prints exactly where each piece landed, plus any `@import` lines left over from other tools so you know they're still there, untouched. If a skill name would collide with one you already have, lore stops before changing anything and tells you what to resolve — better a clear halt than a half-migrated mess. And if you ever delete `AGENTS.md` by accident, re-running `lore init` rebuilds it from the behaviors still on disk.
 
 ## Pointing lore somewhere else
 
