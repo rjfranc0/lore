@@ -66,7 +66,7 @@ paths resolve to the same `env.RELEASE_TAG`, which drives checkout ref,
 |---|---|---|
 | `x86_64-unknown-linux-gnu` | `ubuntu-latest` | no |
 | `aarch64-unknown-linux-gnu` | `ubuntu-latest` | yes |
-| `x86_64-apple-darwin` | `macos-13` | no |
+| `x86_64-apple-darwin` | `macos-15-intel` | no |
 | `aarch64-apple-darwin` | `macos-latest` | no |
 
 Each artifact is named `lore-<os>-<arch>` and uploaded to the GitHub
@@ -132,3 +132,13 @@ config line to add.
   happened to `v0.2.0` and initially to `v1.0.0` before the token was
   switched to a PAT; `release.yml`'s `workflow_dispatch` input exists
   specifically to rebuild/attach binaries to a tag that shipped this way.
+- The macOS runner labels in the build matrix (`os:` column above) are not
+  permanently pinned by GitHub — hosted runner images get retired on a
+  schedule and old labels simply stop getting picked up (the job queues
+  forever, no error). **Confirmed**: `macos-13` was retired 2025-12-04; the
+  `x86_64-apple-darwin` row silently hung on every release build until
+  switched to `macos-15-intel`, GitHub's current Intel-macOS label (itself
+  only guaranteed until 2027-08, since Apple/GitHub are phasing out
+  hosted Intel runners entirely). Revisit this row before that date, and
+  generally treat "job stuck waiting for a runner" as a signal to check
+  for a retired `os:` label, not a transient queue delay.
