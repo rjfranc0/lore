@@ -64,10 +64,23 @@ paths resolve to the same `env.RELEASE_TAG`, which drives checkout ref,
 
 | Target | Runner | Cross-compiled via `cross`? |
 |---|---|---|
-| `x86_64-unknown-linux-gnu` | `ubuntu-latest` | no |
+| `x86_64-unknown-linux-musl` | `ubuntu-latest` | yes |
 | `aarch64-unknown-linux-gnu` | `ubuntu-latest` | yes |
 | `x86_64-apple-darwin` | `macos-15-intel` | no |
 | `aarch64-apple-darwin` | `macos-latest` | no |
+
+The x86_64 Linux target builds against musl (statically linked, no glibc
+dependency) rather than gnu. It originally built `x86_64-unknown-linux-gnu`
+directly on the `ubuntu-latest` runner with no cross-compilation — which
+links against whatever glibc that runner image ships. When GitHub rolled
+`ubuntu-latest` to 24.04 (glibc 2.39), every released binary silently
+required glibc 2.39+, breaking on any older distro (Ubuntu 22.04, Debian
+12, etc. — anything below that version). musl closes this permanently:
+a statically-linked musl binary has no runtime glibc dependency at all, so
+this class of breakage can't recur regardless of what the runner image
+ships next. The `aarch64-unknown-linux-gnu` target was never affected —
+it already cross-compiles via `cross`'s container image, which targets an
+older glibc baseline than the bare runner.
 
 Each artifact is named `lore-<os>-<arch>` and uploaded to the GitHub
 Release matching the pushed tag. `prerelease: ${{ contains(github.ref_name,
@@ -108,6 +121,12 @@ config line to add.
 
 ## What breaks if this is touched
 
+- Switching the x86_64 Linux target back to `-gnu` and building it directly
+  on the bare runner (no `cross`/container) reintroduces the exact glibc
+  problem above — the binary silently inherits whatever glibc version that
+  runner image happens to ship, which drifts upward every time GitHub
+  rolls `ubuntu-latest` forward. Any future Linux target should build via
+  musl (or `cross` against an old glibc baseline) for the same reason.
 - Changing `include-component-in-tag` without updating `release.yml`'s
   `tags: ["v*"]` trigger breaks the release pipeline — release-please
   would push a tag in a shape the build workflow never fires on.
