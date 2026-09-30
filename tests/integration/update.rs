@@ -1,4 +1,4 @@
-use crate::helpers::{Env, make_behavior, make_skill};
+use crate::helpers::{Env, make_agent, make_behavior, make_skill};
 use predicates::prelude::PredicateBooleanExt;
 use std::fs;
 use std::path::PathBuf;
@@ -310,4 +310,104 @@ fn no_name_and_no_all_fails_with_clear_error() {
         .assert()
         .failure()
         .stderr(predicates::str::contains("--all"));
+}
+
+fn add_agent(env: &Env, src: &std::path::Path, name: &str) {
+    env.lore()
+        .arg("agent")
+        .arg("add")
+        .arg(name)
+        .current_dir(src)
+        .assert()
+        .success();
+}
+
+#[test]
+fn relinks_agent_from_new_location() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    let old_src = home(&env).join("old-agents");
+    make_agent(&old_src, "reviewer");
+    add_agent(&env, &old_src, "reviewer");
+
+    let new_src = home(&env).join("new-agents");
+    fs::rename(&old_src, &new_src).unwrap();
+
+    env.lore()
+        .arg("update")
+        .arg("reviewer")
+        .current_dir(&new_src)
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_link(env.agents_dir.join("agents/reviewer.md")).unwrap(),
+        new_src.join("reviewer.md")
+    );
+    assert!(
+        env.claude_agents().join("reviewer.md").exists(),
+        "account re-link must resolve again through the shared link"
+    );
+}
+
+#[test]
+fn relinks_agent_to_explicit_path() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    let old_src = home(&env).join("old-agents");
+    make_agent(&old_src, "reviewer");
+    add_agent(&env, &old_src, "reviewer");
+
+    let elsewhere = home(&env).join("elsewhere");
+    let file = make_agent(&elsewhere, "renamed");
+
+    env.lore()
+        .arg("update")
+        .arg("reviewer")
+        .arg("--path")
+        .arg(&file)
+        .current_dir(env.home.path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_link(env.agents_dir.join("agents/reviewer.md")).unwrap(),
+        file
+    );
+}
+
+#[test]
+fn all_prompts_for_broken_agent_and_relinks_file_but_skips_directory() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    let old_src = home(&env).join("old-agents");
+    make_agent(&old_src, "reviewer");
+    add_agent(&env, &old_src, "reviewer");
+    fs::remove_dir_all(&old_src).unwrap();
+
+    let a_dir = home(&env).join("a-dir");
+    fs::create_dir_all(&a_dir).unwrap();
+    env.lore()
+        .arg("update")
+        .arg("--all")
+        .write_stdin(format!("{}\n", a_dir.display()))
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("is not a file, skipped reviewer"));
+    assert!(!env.agents_dir.join("agents/reviewer.md").exists());
+
+    let new_src = home(&env).join("new-agents");
+    let file = make_agent(&new_src, "reviewer");
+    env.lore()
+        .arg("update")
+        .arg("--all")
+        .write_stdin(format!("{}\n", file.display()))
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("reviewer"));
+
+    assert_eq!(
+        fs::read_link(env.agents_dir.join("agents/reviewer.md")).unwrap(),
+        file
+    );
 }
