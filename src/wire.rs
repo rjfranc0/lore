@@ -204,10 +204,29 @@ pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<
     relink_into(skills_dir, &claude_skills_path(claude_dir), name)
 }
 
+/// True when `claude_dir/agents` is a symlink — the user's own setup, which
+/// agent wiring, fan-out and scoped installs never write or delete through
+/// (it may alias the shared pool, another account, or an unrelated directory).
+pub fn agents_dir_is_symlink(claude_dir: &Path) -> bool {
+    symlink::is_link(&claude_agents_path(claude_dir))
+}
+
 /// Re-links one shared subagent (`subagents_dir/<file_name>`) into
 /// `claude_dir/agents/<file_name>`. `file_name` keeps its `.md` extension.
+/// Warns and skips when `agents/` is a symlink instead of writing through it.
 pub fn relink_agent(subagents_dir: &Path, claude_dir: &Path, file_name: &str) -> Result<()> {
+    if agents_dir_is_symlink(claude_dir) {
+        warn_symlinked_agents_dir(claude_dir, "skipping re-link");
+        return Ok(());
+    }
     relink_into(subagents_dir, &claude_agents_path(claude_dir), file_name)
+}
+
+fn warn_symlinked_agents_dir(claude_dir: &Path, consequence: &str) {
+    output::warn(&format!(
+        "{} is a symlink — leaving it untouched, {consequence}",
+        claude_agents_path(claude_dir).display()
+    ));
 }
 
 /// Create-if-absent: skips silently when a link already exists at
@@ -242,11 +261,16 @@ pub fn unlink_account_skill(claude_dir: &Path, skills_dir: &Path, name: &str) ->
 }
 
 /// Agent counterpart of [`unlink_account_skill`]; `file_name` keeps its `.md`.
+/// Warns and skips when `agents/` is a symlink instead of deleting through it.
 pub fn unlink_account_agent(
     claude_dir: &Path,
     subagents_dir: &Path,
     file_name: &str,
 ) -> Result<()> {
+    if agents_dir_is_symlink(claude_dir) {
+        warn_symlinked_agents_dir(claude_dir, "skipping unlink");
+        return Ok(());
+    }
     unlink_from(&claude_agents_path(claude_dir), subagents_dir, file_name)
 }
 
@@ -272,14 +296,11 @@ fn unlink_from(account_subdir: &Path, shared_dir: &Path, name: &str) -> Result<(
 /// migrate, so a symlinked `agents/` is the user's own setup: warn and leave it
 /// alone rather than write through it. Existing entries always survive.
 pub fn wire_claude_agents(subagents_dir: &Path, claude_dir: &Path) -> Result<()> {
-    let claude_agents = claude_agents_path(claude_dir);
-    if symlink::is_link(&claude_agents) {
-        output::warn(&format!(
-            "{} is a symlink — leaving it untouched, agents not wired",
-            claude_agents.display()
-        ));
+    if agents_dir_is_symlink(claude_dir) {
+        warn_symlinked_agents_dir(claude_dir, "agents not wired");
         return Ok(());
     }
+    let claude_agents = claude_agents_path(claude_dir);
     std::fs::create_dir_all(&claude_agents)?;
 
     if subagents_dir.is_dir() {
@@ -425,5 +446,38 @@ mod tests {
             std::fs::read_to_string(agents.join("mine.md")).unwrap(),
             "hand-written"
         );
+    }
+
+    #[test]
+    fn relink_agent_skips_symlinked_agents_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let subagents_dir = shared_agent(&tmp, "rev.md");
+        let claude_dir = tmp.path().join("claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let user_dir = tmp.path().join("user-agents");
+        std::fs::create_dir_all(&user_dir).unwrap();
+        symlink::create(&user_dir, &claude_agents_path(&claude_dir)).unwrap();
+
+        relink_agent(&subagents_dir, &claude_dir, "rev.md").unwrap();
+
+        assert_eq!(std::fs::read_dir(&user_dir).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn unlink_account_agent_skips_symlinked_agents_dir_aliasing_the_shared_pool() {
+        let tmp = tempfile::tempdir().unwrap();
+        let subagents_dir = shared_agent(&tmp, "rev.md");
+        let claude_dir = tmp.path().join("claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        symlink::create(&subagents_dir, &claude_agents_path(&claude_dir)).unwrap();
+        let shared_entry = subagents_dir.join("rev.md");
+        std::fs::remove_file(&shared_entry).unwrap();
+        let src = tmp.path().join("src.md");
+        std::fs::write(&src, "x").unwrap();
+        symlink::create(&src, &shared_entry).unwrap();
+
+        unlink_account_agent(&claude_dir, &subagents_dir, "rev.md").unwrap();
+
+        assert!(symlink::is_link(&shared_entry));
     }
 }

@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::{
     config::{self, LoreConfig},
@@ -15,11 +15,7 @@ pub fn add(names: Vec<String>, account: Option<String>) -> Result<()> {
 
     let (agents_dir, scoped) = match &account {
         None => (Paths::from_config(&config).subagents_dir, false),
-        Some(name) => {
-            config::validate_account_name(name)?;
-            let claude_dir = config.require_account_path(name)?;
-            (wire::claude_agents_path(&claude_dir), true)
-        }
+        Some(name) => (scoped_agents_dir(&config, name)?, true),
     };
     std::fs::create_dir_all(&agents_dir)?;
 
@@ -89,9 +85,7 @@ fn remove_shared(names: &[String], config: &LoreConfig) -> Result<()> {
 }
 
 fn remove_scoped(names: &[String], config: &LoreConfig, account: &str) -> Result<()> {
-    config::validate_account_name(account)?;
-    let claude_dir = config.require_account_path(account)?;
-    let claude_agents = wire::claude_agents_path(&claude_dir);
+    let claude_agents = scoped_agents_dir(config, account)?;
 
     for raw in names {
         let name = normalize_agent_name(raw);
@@ -105,6 +99,23 @@ fn remove_scoped(names: &[String], config: &LoreConfig, account: &str) -> Result
         }
     }
     Ok(())
+}
+
+/// Resolves `--account <name>` to its `agents/` directory. A symlinked
+/// `agents/` is the user's own setup (it may alias the shared pool or another
+/// account), so a scoped install or removal refuses it rather than write
+/// through it.
+fn scoped_agents_dir(config: &LoreConfig, account: &str) -> Result<PathBuf> {
+    config::validate_account_name(account)?;
+    let claude_dir = config.require_account_path(account)?;
+    if wire::agents_dir_is_symlink(&claude_dir) {
+        bail!(
+            "{} is a symlink — lore does not modify through a user-managed agents directory; \
+             replace it with a real directory to use --account",
+            wire::claude_agents_path(&claude_dir).display()
+        );
+    }
+    Ok(wire::claude_agents_path(&claude_dir))
 }
 
 /// A trailing `.md` is stripped so `reviewer.md` (e.g. from shell tab-completion

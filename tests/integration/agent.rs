@@ -237,3 +237,86 @@ fn remove_of_absent_name_warns_and_exits_0() {
         .success()
         .stdout(predicates::str::contains("ghost is not installed"));
 }
+
+fn symlink_account_agents_dir(env: &Env, account: &str, target: &std::path::Path) {
+    let dir = env.account_agents(account);
+    fs::remove_dir_all(&dir).unwrap();
+    std::os::unix::fs::symlink(target, &dir).unwrap();
+}
+
+#[test]
+fn scoped_add_refuses_symlinked_account_agents_dir_aliasing_the_shared_pool() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    symlink_account_agents_dir(&env, "work", &env.agents_dir.join("agents"));
+    let src = env.home.path().join("src");
+    make_agent(&src, "reviewer");
+
+    add(&env, &src, &["--account", "work", "reviewer"])
+        .failure()
+        .stderr(predicates::str::contains("is a symlink"));
+
+    assert!(!shared(&env, "reviewer.md").exists());
+    assert!(!env.claude_agents().join("reviewer.md").exists());
+}
+
+#[test]
+fn scoped_remove_refuses_symlinked_account_agents_dir_and_keeps_shared_link() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    let src = env.home.path().join("src");
+    make_agent(&src, "reviewer");
+    add(&env, &src, &["reviewer"]).success();
+    symlink_account_agents_dir(&env, "work", &env.agents_dir.join("agents"));
+
+    remove(&env, &["--account", "work", "reviewer"])
+        .failure()
+        .stderr(predicates::str::contains("is a symlink"));
+
+    assert!(shared(&env, "reviewer.md").is_symlink());
+    assert!(env.claude_agents().join("reviewer.md").is_symlink());
+}
+
+#[test]
+fn shared_add_skips_symlinked_account_agents_dir_and_warns() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    let user_dir = env.home.path().join("user-agents");
+    fs::create_dir_all(&user_dir).unwrap();
+    symlink_account_agents_dir(&env, "work", &user_dir);
+    let src = env.home.path().join("src");
+    make_agent(&src, "reviewer");
+
+    add(&env, &src, &["reviewer"])
+        .success()
+        .stdout(predicates::str::contains("is a symlink"));
+
+    assert_eq!(fs::read_dir(&user_dir).unwrap().count(), 0);
+    assert!(shared(&env, "reviewer.md").is_symlink());
+    assert!(env.claude_agents().join("reviewer.md").is_symlink());
+}
+
+#[test]
+fn shared_remove_skips_symlinked_account_agents_dir_and_warns() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    let user_dir = env.home.path().join("user-agents");
+    fs::create_dir_all(&user_dir).unwrap();
+    let kept = user_dir.join("reviewer.md");
+    fs::write(&kept, "user's own").unwrap();
+    symlink_account_agents_dir(&env, "work", &user_dir);
+    let src = env.home.path().join("src");
+    make_agent(&src, "reviewer");
+    add(&env, &src, &["reviewer"]).success();
+
+    remove(&env, &["reviewer"])
+        .success()
+        .stdout(predicates::str::contains("is a symlink"));
+
+    assert_eq!(fs::read_to_string(&kept).unwrap(), "user's own");
+    assert!(!shared(&env, "reviewer.md").is_symlink());
+}
