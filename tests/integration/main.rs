@@ -1,6 +1,7 @@
 mod helpers;
 
 mod accounts;
+mod agent;
 mod behavior;
 mod dispatch;
 mod init;

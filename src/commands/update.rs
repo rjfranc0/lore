@@ -224,6 +224,7 @@ mod tests {
             agents_dir: tmp.path().to_path_buf(),
             skills_dir: tmp.path().join("skills"),
             behaviors_dir: tmp.path().join("behaviors"),
+            subagents_dir: tmp.path().join("agents"),
             agents_md: tmp.path().join("AGENTS.md"),
         }
     }

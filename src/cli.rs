@@ -38,6 +38,11 @@ pub enum Command {
         #[command(subcommand)]
         action: BehaviorAction,
     },
+    /// Manage subagents
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
     /// Manage Claude accounts
     Accounts {
         #[command(subcommand)]
@@ -45,7 +50,7 @@ pub enum Command {
     },
     /// Reconcile AGENTS.md from disk
     Sync,
-    /// Re-link a skill or behavior whose source has moved
+    /// Re-link a skill, behavior or agent whose source has moved
     Update {
         name: Option<String>,
         #[arg(long)]
@@ -53,7 +58,7 @@ pub enum Command {
         #[arg(long)]
         path: Option<String>,
     },
-    /// Show installed skills and behaviors
+    /// Show installed skills, behaviors and agents
     List,
     /// Print the version
     Version,
@@ -71,6 +76,24 @@ pub enum BehaviorAction {
         account: Option<String>,
     },
     /// Remove behavior(s)
+    Remove {
+        #[arg(required = true)]
+        names: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentAction {
+    /// Add subagent(s) from the current directory
+    Add {
+        #[arg(required = true)]
+        names: Vec<String>,
+        #[arg(long)]
+        account: Option<String>,
+    },
+    /// Remove subagent(s)
     Remove {
         #[arg(required = true)]
         names: Vec<String>,

@@ -8,7 +8,7 @@ pub mod symlink;
 pub mod wire;
 
 use clap::Parser;
-use cli::{AccountsAction, BehaviorAction, Cli, Command};
+use cli::{AccountsAction, AgentAction, BehaviorAction, Cli, Command};
 use std::process::ExitCode;
 
 pub fn run() -> ExitCode {
@@ -49,6 +49,10 @@ pub fn run() -> ExitCode {
             BehaviorAction::Add { names, account } => commands::behavior::add(names, account),
             BehaviorAction::Remove { names, account } => commands::behavior::remove(names, account),
         },
+        Some(Command::Agent { action }) => match action {
+            AgentAction::Add { names, account } => commands::agent::add(names, account),
+            AgentAction::Remove { names, account } => commands::agent::remove(names, account),
+        },
         Some(Command::Accounts { action }) => match action {
             AccountsAction::List => commands::accounts::list(),
             AccountsAction::Remove { name } => commands::accounts::remove(name),
@@ -72,13 +76,15 @@ const SHORT_HELP: &str = r#"lore — Layered Orchestration for Rules and Extensi
   lore remove  <skill> [...] [--account <name>]         uninstall skill(s)
   lore behavior add    <name> [...] [--account <name>]  add behavior(s) from current directory
   lore behavior remove <name> [...] [--account <name>]  remove behavior(s)
+  lore agent add    <name> [...] [--account <name>]     add subagent(s) from current directory
+  lore agent remove <name> [...] [--account <name>]     remove subagent(s)
   lore accounts list                                    show registered accounts
   lore accounts remove <name>                           remove an account from the registry
   lore accounts sync                                    re-wire accounts broken on disk
   lore sync                                             reconcile AGENTS.md from disk
-  lore update <name> [--path <path>]                    re-link a skill/behavior from a new path
+  lore update <name> [--path <path>]                    re-link a skill/behavior/agent from a new path
   lore update --all                                     scan for broken symlinks and relink interactively
-  lore list                                             show installed skills and behaviors
+  lore list                                             show installed skills, behaviors and agents
   lore version                                          print version
   lore help                                             full manual
 

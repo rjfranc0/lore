@@ -8,6 +8,7 @@ pub struct Paths {
     pub agents_dir: PathBuf,
     pub skills_dir: PathBuf,
     pub behaviors_dir: PathBuf,
+    pub subagents_dir: PathBuf,
     pub agents_md: PathBuf,
 }
 
@@ -22,12 +23,14 @@ impl Paths {
         let agents_dir = config.agents_dir_path();
         let skills_dir = agents_dir.join("skills");
         let behaviors_dir = agents_dir.join("behaviors");
+        let subagents_dir = agents_dir.join("agents");
         let agents_md = agents_dir.join("AGENTS.md");
 
         Self {
             agents_dir,
             skills_dir,
             behaviors_dir,
+            subagents_dir,
             agents_md,
         }
     }

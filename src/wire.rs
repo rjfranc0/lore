@@ -24,6 +24,11 @@ pub fn claude_behaviors_path(claude_dir: &Path) -> PathBuf {
     claude_dir.join("behaviors")
 }
 
+/// Single source of truth for where subagents live under a Claude dir.
+pub fn claude_agents_path(claude_dir: &Path) -> PathBuf {
+    claude_dir.join("agents")
+}
+
 /// Creates or updates LORE.md so its header imports `agents_md`. LORE.md is
 /// fully lore-owned, so the header is unconditionally overwritten rather than
 /// checked first — that's what keeps this idempotent without a separate
@@ -194,27 +199,37 @@ pub fn wire_claude_skills(skills_dir: &Path, claude_dir: &Path) -> Result<()> {
 }
 
 /// Re-links one shared skill (`skills_dir/<name>`) into `claude_dir/skills/<name>`.
-/// Create-if-absent: skips silently when a link already exists there, so a
-/// caller can call this per-skill (`install`) or in a loop over all shared
-/// skills (`wire_claude_skills`) without ever overwriting an existing link.
-/// If a non-symlink entry already occupies the target (e.g. manual tampering,
-/// since lore itself never places one there post-init), warns and skips
-/// rather than failing the whole fan-out over one account's collision.
+/// See [`relink_into`] for the create-if-absent and collision rules.
 pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<()> {
-    let claude_skills = claude_skills_path(claude_dir);
-    std::fs::create_dir_all(&claude_skills)?;
-    let link = claude_skills.join(name);
+    relink_into(skills_dir, &claude_skills_path(claude_dir), name)
+}
+
+/// Re-links one shared subagent (`subagents_dir/<file_name>`) into
+/// `claude_dir/agents/<file_name>`. `file_name` keeps its `.md` extension.
+pub fn relink_agent(subagents_dir: &Path, claude_dir: &Path, file_name: &str) -> Result<()> {
+    relink_into(subagents_dir, &claude_agents_path(claude_dir), file_name)
+}
+
+/// Create-if-absent: skips silently when a link already exists at
+/// `account_subdir/<name>`, so a caller can call this per-entry (`install`) or
+/// in a loop over all shared entries (`wire_claude_skills`) without ever
+/// overwriting an existing link. If a non-symlink entry already occupies the
+/// target (e.g. manual tampering, or a hand-written agent file), warns and
+/// skips rather than failing the whole fan-out over one account's collision.
+fn relink_into(shared_dir: &Path, account_subdir: &Path, name: &str) -> Result<()> {
+    std::fs::create_dir_all(account_subdir)?;
+    let link = account_subdir.join(name);
     if symlink::is_link(&link) {
         return Ok(());
     }
     if link.exists() {
         output::warn(&format!(
             "{name} exists in {} and is not a symlink — skipping re-link",
-            claude_skills.display()
+            account_subdir.display()
         ));
         return Ok(());
     }
-    symlink::create(&skills_dir.join(name), &link)?;
+    symlink::create(&shared_dir.join(name), &link)?;
     Ok(())
 }
 
@@ -223,25 +238,73 @@ pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<
 /// install of the same name that points elsewhere is left untouched rather
 /// than silently destroyed. Silent no-op when no link is present.
 pub fn unlink_account_skill(claude_dir: &Path, skills_dir: &Path, name: &str) -> Result<()> {
-    let link = claude_skills_path(claude_dir).join(name);
+    unlink_from(&claude_skills_path(claude_dir), skills_dir, name)
+}
+
+/// Agent counterpart of [`unlink_account_skill`]; `file_name` keeps its `.md`.
+pub fn unlink_account_agent(
+    claude_dir: &Path,
+    subagents_dir: &Path,
+    file_name: &str,
+) -> Result<()> {
+    unlink_from(&claude_agents_path(claude_dir), subagents_dir, file_name)
+}
+
+fn unlink_from(account_subdir: &Path, shared_dir: &Path, name: &str) -> Result<()> {
+    let link = account_subdir.join(name);
     if !symlink::is_link(&link) {
         return Ok(());
     }
-    let expected = skills_dir.join(name);
+    let expected = shared_dir.join(name);
     match std::fs::read_link(&link) {
         Ok(target) if target == expected => std::fs::remove_file(&link)?,
         Ok(_) => output::warn(&format!(
             "{name} in {} points elsewhere (account-scoped install) — leaving it in place",
-            claude_skills_path(claude_dir).display()
+            account_subdir.display()
         )),
         Err(_) => {}
     }
     Ok(())
 }
 
+/// Ensures `claude_dir/agents` is a real directory holding a re-link for every
+/// entry in `subagents_dir`. Unlike skills there is no legacy symlink model to
+/// migrate, so a symlinked `agents/` is the user's own setup: warn and leave it
+/// alone rather than write through it. Existing entries always survive.
+pub fn wire_claude_agents(subagents_dir: &Path, claude_dir: &Path) -> Result<()> {
+    let claude_agents = claude_agents_path(claude_dir);
+    if symlink::is_link(&claude_agents) {
+        output::warn(&format!(
+            "{} is a symlink — leaving it untouched, agents not wired",
+            claude_agents.display()
+        ));
+        return Ok(());
+    }
+    std::fs::create_dir_all(&claude_agents)?;
+
+    if subagents_dir.is_dir() {
+        for entry in std::fs::read_dir(subagents_dir)? {
+            let entry = entry?;
+            relink_agent(
+                subagents_dir,
+                claude_dir,
+                &entry.file_name().to_string_lossy(),
+            )?;
+        }
+    }
+
+    output::ok(&format!(
+        "Wired {} as re-links from {}",
+        claude_agents.display(),
+        subagents_dir.display()
+    ));
+    Ok(())
+}
+
 pub fn wire_claude_dir(
     agents_md: &Path,
     skills_dir: &Path,
+    subagents_dir: &Path,
     claude_dir: &Path,
     migration_behaviors_dir: &Path,
     migration_register_md: &Path,
@@ -258,6 +321,109 @@ pub fn wire_claude_dir(
         migration_register_md,
     )?;
     wire_claude_skills(skills_dir, claude_dir)?;
+    wire_claude_agents(subagents_dir, claude_dir)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shared_agent(tmp: &tempfile::TempDir, name: &str) -> PathBuf {
+        let subagents_dir = tmp.path().join("shared-agents");
+        std::fs::create_dir_all(&subagents_dir).unwrap();
+        std::fs::write(subagents_dir.join(name), "x").unwrap();
+        subagents_dir
+    }
+
+    #[test]
+    fn relink_agent_creates_link_when_absent_and_skips_when_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let subagents_dir = shared_agent(&tmp, "rev.md");
+        let claude_dir = tmp.path().join("claude");
+
+        relink_agent(&subagents_dir, &claude_dir, "rev.md").unwrap();
+        let link = claude_agents_path(&claude_dir).join("rev.md");
+        assert_eq!(
+            std::fs::read_link(&link).unwrap(),
+            subagents_dir.join("rev.md")
+        );
+
+        // Re-pointing the link elsewhere proves a second call never overwrites it.
+        let other = tmp.path().join("other.md");
+        std::fs::write(&other, "y").unwrap();
+        std::fs::remove_file(&link).unwrap();
+        symlink::create(&other, &link).unwrap();
+        relink_agent(&subagents_dir, &claude_dir, "rev.md").unwrap();
+        assert_eq!(std::fs::read_link(&link).unwrap(), other);
+    }
+
+    #[test]
+    fn relink_agent_skips_real_file_in_the_way() {
+        let tmp = tempfile::tempdir().unwrap();
+        let subagents_dir = shared_agent(&tmp, "mine.md");
+        let claude_dir = tmp.path().join("claude");
+        let agents = claude_agents_path(&claude_dir);
+        std::fs::create_dir_all(&agents).unwrap();
+        std::fs::write(agents.join("mine.md"), "hand-written").unwrap();
+
+        relink_agent(&subagents_dir, &claude_dir, "mine.md").unwrap();
+
+        let link = agents.join("mine.md");
+        assert!(!symlink::is_link(&link));
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "hand-written");
+    }
+
+    #[test]
+    fn unlink_account_agent_removes_only_links_to_the_shared_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let subagents_dir = shared_agent(&tmp, "rev.md");
+        let claude_dir = tmp.path().join("claude");
+
+        relink_agent(&subagents_dir, &claude_dir, "rev.md").unwrap();
+        unlink_account_agent(&claude_dir, &subagents_dir, "rev.md").unwrap();
+        let link = claude_agents_path(&claude_dir).join("rev.md");
+        assert!(!symlink::is_link(&link));
+
+        let scoped_src = tmp.path().join("scoped.md");
+        std::fs::write(&scoped_src, "y").unwrap();
+        symlink::create(&scoped_src, &link).unwrap();
+        unlink_account_agent(&claude_dir, &subagents_dir, "rev.md").unwrap();
+        assert_eq!(std::fs::read_link(&link).unwrap(), scoped_src);
+    }
+
+    #[test]
+    fn wire_claude_agents_leaves_symlinked_agents_dir_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let subagents_dir = shared_agent(&tmp, "rev.md");
+        let claude_dir = tmp.path().join("claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        let user_dir = tmp.path().join("user-agents");
+        std::fs::create_dir_all(&user_dir).unwrap();
+        symlink::create(&user_dir, &claude_agents_path(&claude_dir)).unwrap();
+
+        wire_claude_agents(&subagents_dir, &claude_dir).unwrap();
+
+        assert!(symlink::is_link(&claude_agents_path(&claude_dir)));
+        assert_eq!(std::fs::read_dir(&user_dir).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn wire_claude_agents_relinks_shared_entries_and_keeps_existing_ones() {
+        let tmp = tempfile::tempdir().unwrap();
+        let subagents_dir = shared_agent(&tmp, "rev.md");
+        let claude_dir = tmp.path().join("claude");
+        let agents = claude_agents_path(&claude_dir);
+        std::fs::create_dir_all(&agents).unwrap();
+        std::fs::write(agents.join("mine.md"), "hand-written").unwrap();
+
+        wire_claude_agents(&subagents_dir, &claude_dir).unwrap();
+
+        assert!(symlink::is_link(&agents.join("rev.md")));
+        assert_eq!(
+            std::fs::read_to_string(agents.join("mine.md")).unwrap(),
+            "hand-written"
+        );
+    }
 }
