@@ -8,15 +8,20 @@ pub fn claude_md_path(claude_dir: &Path) -> PathBuf        // claude_dir.join("C
 pub fn lore_md_path(claude_dir: &Path) -> PathBuf           // claude_dir.join("LORE.md")
 pub fn claude_skills_path(claude_dir: &Path) -> PathBuf     // claude_dir.join("skills")
 pub fn claude_behaviors_path(claude_dir: &Path) -> PathBuf  // claude_dir.join("behaviors")
+pub fn claude_agents_path(claude_dir: &Path) -> PathBuf     // claude_dir.join("agents")
 
 pub fn wire_lore_md(agents_md: &Path, claude_dir: &Path) -> Result<PathBuf>
 pub fn wire_claude_md(claude_dir: &Path, agents_md: &Path,
                        migration_behaviors_dir: &Path, migration_register_md: &Path) -> Result<()>
 pub fn wire_claude_skills(skills_dir: &Path, claude_dir: &Path) -> Result<()>
+pub fn wire_claude_agents(subagents_dir: &Path, claude_dir: &Path) -> Result<()>
 pub fn relink_skill(skills_dir: &Path, claude_dir: &Path, name: &str) -> Result<()>
-pub fn unlink_account_skill(claude_dir: &Path, name: &str) -> Result<()>
-pub fn wire_claude_dir(agents_md: &Path, skills_dir: &Path, claude_dir: &Path,
-                        migration_behaviors_dir: &Path, migration_register_md: &Path) -> Result<()>
+pub fn relink_agent(subagents_dir: &Path, claude_dir: &Path, file_name: &str) -> Result<()>
+pub fn unlink_account_skill(claude_dir: &Path, skills_dir: &Path, name: &str) -> Result<()>
+pub fn unlink_account_agent(claude_dir: &Path, subagents_dir: &Path, file_name: &str) -> Result<()>
+pub fn wire_claude_dir(agents_md: &Path, skills_dir: &Path, subagents_dir: &Path,
+                        claude_dir: &Path, migration_behaviors_dir: &Path,
+                        migration_register_md: &Path) -> Result<()>
 ```
 
 **`LORE.md` is lore's fully-owned intermediary** between the universal
@@ -113,19 +118,46 @@ Both functions are re-link **primitives** — `install`/`remove` (see
 the callers that decide *which* accounts to loop over and whether the
 operation is shared or scoped to one name.
 
+**The skill and agent variants share one body.** `relink_skill` and
+`unlink_account_skill` are one-line wrappers over private
+`relink_into(shared_dir, account_subdir, name)` and
+`unlink_from(account_subdir, shared_dir, name)`; `relink_agent` and
+`unlink_account_agent` are the same wrappers passing
+`claude_agents_path(claude_dir)`. So the create-if-absent rule, the
+non-symlink warn-and-skip, and the "points elsewhere → warn, leave in
+place" rule are literally the same code for both kinds, and the warnings
+name whichever subdir was passed (`…/skills` or `…/agents`). For agents,
+`file_name` is always `<name>.md` — the link keeps its extension and both
+the shared and account sides join on it, which is what keeps `unlink_from`'s
+`target == shared_dir.join(name)` comparison exact.
+
+**`wire_claude_agents(subagents_dir, claude_dir)` deliberately differs from
+`wire_claude_skills`.** There is no legacy single-symlink model for agents
+to migrate away from, so a symlink sitting at `claude_dir/agents` is treated
+as the user's own setup: it warns (`<path> is a symlink — leaving it
+untouched, agents not wired`) and returns `Ok(())` without removing it and
+without writing through it. Otherwise it `create_dir_all`s the directory and
+calls `relink_agent` for every entry in `subagents_dir` (skipped if
+`subagents_dir` doesn't exist yet), then prints the same `Wired … as
+re-links from …` line skills print. It never removes or rebuilds anything,
+so real `.md` files and account-scoped links already in `agents/` survive
+every `init`/`sync`; a shared name that collides with a real file is skipped
+with a warning by `relink_into`, not a failure.
+
 `wire_claude_dir` is the orchestrator, in a fixed order:
 `create_dir_all(claude_dir)` → `wire_lore_md` → `wire_claude_md` →
-`wire_claude_skills`. The order is load-bearing: `LORE.md` must exist
+`wire_claude_skills` → `wire_claude_agents`. The order is load-bearing: `LORE.md` must exist
 before `wire_claude_md` runs, because cases 1/2/4 above all write a line
 that names it, and a Case-3 migration for a named account also registers
 into that same freshly-ensured `LORE.md`.
 
-**`claude_md_path`/`lore_md_path`/`claude_skills_path`/`claude_behaviors_path`
+**`claude_md_path`/`lore_md_path`/`claude_skills_path`/`claude_behaviors_path`/`claude_agents_path`
 exist as the single source of truth for those joins** — every caller that
 needs to know where a Claude account's `CLAUDE.md`, `LORE.md`, skills
-symlink, or scoped-behaviors directory lives ([init](init.md),
+directory, scoped-behaviors directory, or agents directory lives ([init](init.md),
 [commands](commands.md), `commands/behavior.rs`'s scoped `add`/`remove`,
-and `wire.rs` itself) calls through these four functions rather than
+`commands/agent.rs`, `commands/list.rs`, and `wire.rs` itself) calls through
+these five functions rather than
 independently writing `claude_dir.join(...)`. This was a deliberate
 de-duplication: the layout rule used to be computed in multiple places
 independently, which is a correctness risk (multiple places to keep in
@@ -137,7 +169,7 @@ tuple used to compute independently (see [init](init.md)).
 
 ## What breaks if this is touched
 
-- Reverting the `claude_md_path`/`claude_skills_path`/`claude_behaviors_path`
+- Reverting the `claude_md_path`/`claude_skills_path`/`claude_behaviors_path`/`claude_agents_path`
   centralization (going back to inline `.join(...)` calls in
   [init](init.md)/[commands](commands.md)/`commands/behavior.rs`)
   reintroduces the duplicated-knowledge risk these helpers were added to
@@ -153,6 +185,15 @@ tuple used to compute independently (see [init](init.md)).
   the shared re-links. It would also desync `accounts sync`'s wired-check
   (see [commands](commands.md)), which now explicitly expects a real,
   non-symlinked directory.
+- Un-sharing `relink_into`/`unlink_from` (copying the body back into
+  separate skill and agent versions) lets the two kinds' collision and
+  "points elsewhere" rules drift apart — `remove`'s promise never to delete
+  an account-scoped link of the same name depends on both kinds sharing the
+  exact `target == shared_dir.join(name)` check.
+- Making `wire_claude_agents` rebuild or replace `agents/` the way
+  `wire_claude_skills` replaces a legacy symlink would destroy hand-written
+  agent files and user-symlinked directories that lore is contracted never
+  to touch (see [@/functional/accounts.md] — "Per-account agents dir").
 - Replacing `wire_lore_md`/`wire_claude_md`'s explicit-catch-and-warn read
   handling with a plain `?` (e.g. during a refactor that looks like
   dead-code cleanup) silently reintroduces the bug fixed by making `sync`

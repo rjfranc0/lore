@@ -21,8 +21,9 @@ forget.
   different *kind* of account, just the one with no name argument.
 - **Registered** vs. **wired**: an account is *registered* if it has an
   entry in `lore.toml`'s `[accounts]` table. It is *wired* if `CLAUDE.md`,
-  `LORE.md`, and the skills directory (a real directory, not a symlink —
-  see below) actually exist correctly on disk at that path. These can
+  `LORE.md`, the skills directory (a real directory, not a symlink —
+  see below) and the `agents/` directory actually exist correctly on disk
+  at that path. These can
   drift apart (disk state changes without the registry knowing) —
   `accounts sync` is what reconciles them back together.
 - **`LORE.md`**: a file fully owned by lore, one per Claude account
@@ -56,11 +57,13 @@ already.
 ## Feature: `lore init` (default account)
 
 **What it does**: bootstraps `~/.agents/` (creates `AGENTS.md`, `skills/`,
-`behaviors/` if missing) — independently — and wires the `default` Claude
-account: creates/updates `~/.claude/LORE.md` to import `AGENTS.md`,
-surgically wires `~/.claude/CLAUDE.md` to import `LORE.md` without ever
-overwriting it, and symlinks `~/.claude/skills → ~/.agents/skills`.
-Registers `default` in the config the first time it runs.
+`behaviors/`, `agents/` if missing) — independently — and wires the
+`default` Claude account: creates/updates `~/.claude/LORE.md` to import
+`AGENTS.md`, surgically wires `~/.claude/CLAUDE.md` to import `LORE.md`
+without ever overwriting it, and symlinks `~/.claude/skills →
+~/.agents/skills`. It also ensures `~/.claude/agents/` is a real directory
+holding a re-link for every shared subagent (see "Per-account agents dir,"
+below). Registers `default` in the config the first time it runs.
 
 **Why idempotent**: re-running must be safe — it's the documented recovery
 path if `AGENTS.md` ever gets deleted by accident (it gets rebuilt,
@@ -169,6 +172,21 @@ what makes per-account skill scoping possible — see
 account-specific symlink can live in that same directory alongside the
 shared re-links, which a single top-level symlink could never hold.
 
+**Per-account agents dir**: `~/.claude-<name>/agents/` (and
+`~/.claude/agents/` for `default`) is likewise a real directory holding one
+re-link per shared subagent
+(`~/.claude-<name>/agents/<agent>.md → ~/.agents/agents/<agent>.md`), so an
+account-scoped agent can sit beside the shared re-links — see
+[@/functional/agent-config/agents.md#feature-agent-add--remove]. Two
+differences from skills, both because subagents have no legacy layout to
+migrate: (1) **real files already in `agents/` are never moved into the
+shared pool** — for *any* account, `default` included — and stay untouched;
+a shared agent whose name collides with one is skipped with a warning
+rather than failing the run. (2) **A symlinked `agents/` is the user's own
+setup**: lore warns and leaves it alone instead of replacing it with a
+directory or writing through it. Re-running `init` only ever adds missing
+re-links; existing entries, including account-scoped agent links, survive.
+
 **A named account's own real skills are never migrated into the shared
 pool.** Only the default account's bootstrap moves pre-existing real skill
 directories out of `skills/` and into `~/.agents/skills/` (see "Skill
@@ -199,6 +217,12 @@ completes.
   then none of them are moved into `~/.agents/skills/` — they stay in
   place, and only re-links for skills already in the shared pool are added
   alongside them.
+- Given shared agents exist, when `init --account work` runs, then
+  `~/.claude-work/agents/` exists as a real directory holding a re-link to
+  each shared agent.
+- Given `~/.claude-work/agents/` holds an account-scoped agent link or a
+  hand-written `.md` file, when `init` (or `init --account work`) runs
+  again, then both are still there afterwards, unchanged.
 
 ## Feature: `accounts list`
 
@@ -235,7 +259,9 @@ forgetting it *and* wiping its directory would not be.
 **What it does**: for every account in the registry, checks whether it's
 actually wired correctly — `CLAUDE.md` imports `LORE.md`, **and** `LORE.md`
 itself imports `AGENTS.md`, **and** the skills path is a real directory
-(not a symlink). Any account that fails any of these checks gets fully
+(not a symlink), **and** the `agents/` path is a directory (a
+user-symlinked `agents/` counts as wired, so it does not trigger a re-wire
+every run). Any account that fails any of these checks gets fully
 re-wired via the same path `init` uses (the same surgical CLAUDE.md
 handling, not a shortcut), and the rewire is reported by name. If every
 account was already correct, reports "Accounts already in sync" instead.
@@ -243,9 +269,9 @@ account was already correct, reports "Accounts already in sync" instead.
 **Why**: accounts can break independently of lore (a user deletes a
 `CLAUDE.md` or `LORE.md` by hand, a skills symlink target moves) — `sync`
 is the repair tool, parallel to `lore sync` but scoped to Claude wiring
-(the `CLAUDE.md`/`LORE.md` import chain, the skills directory shape)
-instead of behavior-entry content — `lore sync` owns reconciling entries
-*inside* `AGENTS.md` and every `LORE.md`, see
+(the `CLAUDE.md`/`LORE.md` import chain, the skills and agents directory
+shapes) instead of behavior-entry content — `lore sync` owns reconciling
+entries *inside* `AGENTS.md` and every `LORE.md`, see
 [@/functional/agent-config/sync.md#feature-sync-agentsmd--per-account-loremd-reconciliation].
 The two `sync` commands are intentionally separate (`lore sync` vs. `lore
 accounts sync`) rather than one command with a flag, to keep each one's
@@ -263,9 +289,12 @@ blast radius obvious from its own name.
   stray symlink (instead of a real directory), when `accounts sync` runs,
   then it is recreated as a real directory holding re-links to every
   shared skill.
-- Given every account is already correctly wired (both hops, plus skills),
-  when `accounts sync` runs, then nothing is rewritten and it reports as
-  such.
+- Given an account's `agents/` directory is missing, when `accounts sync`
+  runs, then the account is re-wired and `agents/` is recreated as a real
+  directory holding re-links to every shared agent.
+- Given every account is already correctly wired (both hops, plus skills
+  and agents), when `accounts sync` runs, then nothing is rewritten and it
+  reports as such.
 
 A read failure on `CLAUDE.md` or `LORE.md` (permission denied, non-UTF8
 content) is treated the same as "not wired" and triggers a rewire, rather
@@ -282,7 +311,7 @@ rewire path reused the same failing load call.
 |---|---|---|
 | Config at `~/.config/lore/` | `~/.agents/lore.toml` | Neutral ground — `~/.agents/` is agent *data*, not lore's own config; leaves room for a future multi-agents-dir setup |
 | TOML format | JSON, custom | Native fit for the Rust ecosystem, serde-friendly |
-| `accounts sync` separate from `lore sync` | `lore sync --accounts` flag | All account operations live under one noun; `sync` (no namespace) keeps its own scope — behavior-entry content in `AGENTS.md`/every `LORE.md` — while `accounts sync` owns Claude wiring (`CLAUDE.md`/`LORE.md` import chain, skills directory shape) |
+| `accounts sync` separate from `lore sync` | `lore sync --accounts` flag | All account operations live under one noun; `sync` (no namespace) keeps its own scope — behavior-entry content in `AGENTS.md`/every `LORE.md` — while `accounts sync` owns Claude wiring (`CLAUDE.md`/`LORE.md` import chain, skills and agents directory shapes) |
 | Registry-only on `accounts remove` | Also wipe the account's directory from disk | Consistent with the non-destructive philosophy applied everywhere else in this tool |
 | Clean break removing `AGENTS_DIR`/`CLAUDE_DIR` env vars | Deprecation warnings first | lore is pre-1.0; no installed base to protect from a breaking change |
 | `--account default` unified with the implicit default | Reject `--account default` outright as an error | A silent second untracked directory was strictly worse than either valid option; unification was chosen as the more forgiving of the two |

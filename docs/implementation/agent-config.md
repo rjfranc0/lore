@@ -58,13 +58,14 @@ to point at).
 
 ## Module: `symlink.rs`
 
-**Responsibility**: the only three symlink primitives the rest of the
-codebase needs. Deliberately tiny — three free functions, no struct.
+**Responsibility**: the only symlink primitives the rest of the codebase
+needs. Deliberately tiny — four free functions, no struct.
 
 ```rust
 pub fn create(src: &Path, dst: &Path) -> Result<()>   // unix-only; bails on other platforms
 pub fn is_link(path: &Path) -> bool                     // true even for a broken symlink
 pub fn is_live(path: &Path) -> bool                      // true only if the link's target exists AND is a directory
+pub fn is_live_file(path: &Path) -> bool                 // true only if the link's target exists AND is a regular file
 ```
 
 **The `is_link` / `is_live` split is the key invariant every caller relies
@@ -82,6 +83,15 @@ copies of the same check, not a shared helper. Collapsing these two checks
 into one (e.g. just using `is_dir()`
 everywhere) would make a broken symlink indistinguishable from "nothing is
 here," which is a different state `list` needs to report differently.
+
+**`is_live_file` is the file-shaped twin of `is_live`**, added for subagents
+(a single `.md` file, not a directory). It is `Path::is_file` — also
+follows the link — and `is_live` is deliberately left directory-only so
+skills and behaviors keep their semantics. The broken predicate for an agent
+is therefore `is_link(path) && !is_live_file(path)`; a link that now points
+at a *directory* counts as broken for agents, exactly as a link to a file
+counts as broken for skills. `list` and `update --all` each pick the
+predicate by entry kind rather than duplicating the loop.
 
 ## Module: `output.rs`
 
@@ -129,6 +139,39 @@ only the thin `run()` wrapper touches that I/O. From there:
   inline copies per command — so tab-completion's `my-skill/` and a
   hand-typed `my-skill` resolve to the same path everywhere a name is taken
   as an argument.
+- **agent add/remove** (`commands/agent.rs`): the skill install/remove shape
+  applied to `<name>.md` files. Unlike the commands above it loads a
+  `LoreConfig` first (it fans out over `config.accounts`) and derives paths
+  via `Paths::from_config`. A private `normalize_agent_name(raw)` applies
+  `commands::normalize_name` (trailing `/`) and then strips **one** trailing
+  `.md` (`strip_suffix(".md").unwrap_or(name)`), so `reviewer.md.md` names the
+  agent `reviewer.md`; every path is then `<name>.md`, and output prints the
+  bare name.
+
+  `add(names, account)` resolves one target dir: `Paths::subagents_dir`
+  (shared), or — scoped — `validate_account_name` →
+  `require_account_path` → `wire::claude_agents_path`, all before
+  `create_dir_all(target)`, so an unregistered account fails with nothing
+  created. Per name, `src = cwd/<name>.md`, `dst = target/<name>.md`, in this
+  order: `src` not a file → warn `'<name>.md' not found in <cwd>` and
+  `continue` (no fan-out for that name); `dst` is a symlink → warn `<name>
+  already installed` with `existing`/`attempted` notes (same format as
+  `install`), never overwritten; `dst` exists but isn't a symlink → warn it is
+  not a symlink and skip; otherwise `symlink::create` and `Installed agent
+  <name>`. **Fan-out is shared-only and runs after any of the last three
+  outcomes**, not just after a fresh install: `wire::relink_agent` over every
+  `config.accounts` entry (default included, since it is registered), which
+  self-heals a missing re-link and is a no-op where one exists. Scoped `add`
+  never fans out.
+
+  `remove(names, account)` mirrors it. Shared: remove `subagents_dir/<name>.md`
+  if `is_link`, else warn `<name> is not installed`; then
+  `wire::unlink_account_agent` over every account **regardless** of whether the
+  shared link existed, so orphaned re-links are still cleaned. Scoped:
+  validate/resolve the account, remove the link if `is_link`, else warn
+  `<name> is not installed in account '<account>'` — a real file there is
+  therefore reported as "not installed" and left in place. Source files are
+  never touched.
 - **behavior add/remove**: like install/remove, each takes an `account:
   Option<String>` and dispatches — `add`/`remove` are thin wrappers that
   branch to `add_shared`/`add_scoped` or `remove_shared`/`remove_scoped`.
@@ -180,52 +223,80 @@ only the thin `run()` wrapper touches that I/O. From there:
   tag for real directories, `(none)` if nothing qualified, and returns
   `(rendered_text, found_any)` so callers can also decide whether a section
   is worth printing at all (`print_dir_entries` is a thin wrapper that
-  discards the bool for the shared, always-printed sections). `run()` calls
-  it once each for the shared `skills_dir`/`behaviors_dir` (`Shared
-  skills:`/`Shared behaviors:`, no filtering), then once each per
+  discards the bool for the shared, always-printed sections). Both helpers
+  also take a private `EntryKind { Dir, MdFile }`: existing skill/behavior
+  call sites pass `Dir` and behave exactly as before; `MdFile` (agents)
+  changes three things — liveness uses `symlink::is_live_file`, the displayed
+  name drops a trailing `.md`, and **non-symlink entries are skipped
+  entirely** (no `(migrated)`/`(built-in)` tag, `found` stays false), so a
+  hand-written `.md` in an account's `agents/` is never listed. The
+  `skip_relink_target` comparison still uses the raw entry name, so it keeps
+  matching `subagents_dir/<name>.md`. `run()` calls
+  it once each for the shared `skills_dir`/`behaviors_dir`/`subagents_dir`
+  (`Shared skills:`/`Shared behaviors:`/`Shared agents:`, no filtering), then
+  once each per
   registered account — **`default` included** — via `wire::claude_skills_path`/
-  `claude_behaviors_path`, i.e. the exact same account-directory resolution
+  `claude_behaviors_path`/`claude_agents_path`, i.e. the exact same
+  account-directory resolution
   every other account gets, not a hardcoded shared-tree path. The account
   skills call passes `skip_relink_target: Some(&p.skills_dir)` — entries
   whose symlink target is exactly `skills_dir.join(name)` are shared-skill
   re-links (see `wire::relink_skill`, [@/implementation/accounts/wire.md#module-wirers]),
   not account-owned installs, so they're skipped there since they're
-  already printed once under `Shared skills:`. The account behaviors call
+  already printed once under `Shared skills:`. The account agents call does
+  the same with `Some(&p.subagents_dir)`, for the same reason
+  (`wire::relink_agent` re-links). The account behaviors call
   passes `None`: `behavior add --account` (see above) always symlinks
   straight to the source repo, never through a shared re-link, so no such
   entry can exist to filter.
 
   **Only the `Account: <name>` header's print is conditional, not the loop
   itself**: a section is skipped exactly when `name == "default"` *and*
-  both `has_skills`/`has_behaviors` (the bool each `collect_dir_entries`
-  call returns) come back false. Any other account always gets a section,
-  even when fully empty (rendered as two `(none)` sub-sections) — that's
+  all of `has_skills`/`has_behaviors`/`has_agents` (the bool each
+  `collect_dir_entries` call returns) come back false. Any other account
+  always gets a section,
+  even when fully empty (rendered as three `(none)` sub-sections) — that's
   what distinguishes "registered but empty" from "not registered" for a
   named account. For `default` specifically, staying silent only when it
   has nothing account-specific to show is what keeps a bare `lore init`
   from growing a permanent empty `Account: default` section, while still
   surfacing a skill or behavior installed with `--account default` under
   its own section, exactly like any other account.
-- **update**: `locate` checks `skills_dir` before `behaviors_dir` for a
-  given name. Relinking is unconditional — it never checks current link
+- **update**: `locate` checks `skills_dir`, then `behaviors_dir`, then
+  `subagents_dir` for a given name; the agent lookup strips one trailing
+  `.md` from the name first (`agent_stem`) and checks
+  `subagents_dir/<stem>.md` with `is_link || is_file`, returning
+  `Kind::Agent`. A `Kind` enum (`Skill`/`Behavior`/`Agent`) carries the type
+  through; its `is_valid_source` (file for `Agent`, directory otherwise) and
+  `source_noun` are shared by `update_one` (an agent's default source is
+  `cwd/<stem>.md`; a missing or wrong-shaped source bails `'<path>' not
+  found`) and `relink_candidate` (a wrong-shaped answer warns `'<path>' is
+  not a file`/`a directory`, skips, and continues). Relinking is
+  unconditional — it never checks current link
   health first, just removes any existing symlink and recreates it (the
   same force semantics apply whether the old link was broken or healthy).
+  Agents never touch `AGENTS.md`: `sync_behavior_entry` is only reached for
+  `Kind::Behavior`.
   For a behavior, `sync_behavior_entry` re-runs `behavior_entry` against
   the new target and rewrites the `AGENTS.md` block only if the resolved
   filename actually changed. `--all` finds broken candidates with the same
-  `is_link && !is_live` predicate `list` uses to flag `✗ broken`, but
-  unlike `list` does not sort them — prompt order follows
+  `is_link && !is_live` predicate `list` uses to flag `✗ broken` —
+  `find_broken(dir, is_live)` takes the liveness check as a plain `fn(&Path)
+  -> bool` parameter: skills and behaviors pass `symlink::is_live`, and a
+  third pass over `subagents_dir` passes `symlink::is_live_file` (entries
+  displayed with `.md` stripped). Unlike `list` it does not sort them —
+  prompt order follows
   `std::fs::read_dir`'s unspecified order within each directory (skills
-  are always prompted before behaviors; order within either kind is not
-  guaranteed). A relink itself succeeding is never undone by a failure in
+  are always prompted before behaviors, then agents; order within any kind
+  is not guaranteed). A relink itself succeeding is never undone by a failure in
   the `AGENTS.md` bookkeeping that follows it — `update_one` and
   `relink_candidate` both call `sync_behavior_entry` through
   `warn_on_sync_failure`, which turns its `Err` into a printed warning
   instead of propagating it, so a single candidate's bookkeeping failure
   (e.g. no resolvable entry file at the new location) never aborts the
   rest of an `--all` scan. `update_all` only attempts to load `AgentsMd`
-  at all if at least one candidate is a behavior — a skill-only `--all`
-  run never requires `AGENTS.md` to exist.
+  at all if at least one candidate is a behavior — a skill-only or
+  agent-only `--all` run never requires `AGENTS.md` to exist.
 
 ## What breaks if this is touched
 
@@ -249,5 +320,21 @@ only the thin `run()` wrapper touches that I/O. From there:
   just an internal cleanup.
 - Reintroducing an unconditional exclusion of `default` from `list`'s
   account loop (instead of gating only the empty-section print on it)
-  would hide any skill or behavior installed via `--account default`, even
-  though it's registered and wired exactly like any other account.
+  would hide any skill, behavior or agent installed via `--account default`,
+  even though it's registered and wired exactly like any other account.
+- Dropping `!has_agents` from the `default` silence condition would hide an
+  agent added with `--account default` whenever `default` has no skills or
+  behaviors of its own.
+- `list`'s agent re-link filter depends on the same exact path equality as
+  the skills one, with the extra wrinkle that both sides use the *raw*
+  `<name>.md` file name. Stripping `.md` before the comparison (instead of
+  only for display) would silently stop it matching and double-list every
+  shared agent under each account.
+- Sharing `symlink::is_live` between skills and agents (or making
+  `is_live_file` accept directories) would misreport broken agent links: a
+  link retargeted at a directory would look healthy in `list` and be skipped
+  by `update --all`.
+- Changing the name normalization in `agent.rs` (`strip_suffix(".md")` runs
+  once, after the trailing-slash strip) changes which files a name maps to;
+  `update`'s `agent_stem` is an independent copy of the same one-`.md` rule,
+  so the two must be changed together.

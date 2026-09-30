@@ -1,8 +1,9 @@
 # lore
 
-A Rust CLI that manages AI agent skills and behaviors via symlinks into a
-single universal directory (`~/.agents/`), and wires that directory into
-one or more Claude accounts (`~/.claude/`, `~/.claude-<account>/`).
+A Rust CLI that manages AI agent skills, behaviors and subagents via
+symlinks into a single universal directory (`~/.agents/`), and wires that
+directory into one or more Claude accounts (`~/.claude/`,
+`~/.claude-<account>/`).
 
 ## Start here
 
@@ -19,8 +20,8 @@ Everything lore manages is either a symlink or one of three generated files
 (`AGENTS.md`, `LORE.md`, `CLAUDE.md`) — though `CLAUDE.md` is special:
 lore only ever owns a single import line inside it, never the whole file,
 so it can coexist with other tools that write their own lines there.
-Nothing is ever copied, and removing/uninstalling never modifies a skill or
-behavior's source repo — only the symlink lore created. See
+Nothing is ever copied, and removing/uninstalling never modifies a skill,
+behavior or subagent's source — only the symlink lore created. See
 [functional/agent-config/index.md](functional/agent-config/index.md) and
 [functional/accounts.md](functional/accounts.md) for the full model.
 
