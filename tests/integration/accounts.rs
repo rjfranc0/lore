@@ -186,6 +186,25 @@ fn sync_rewires_missing_skills_dir() {
 }
 
 #[test]
+fn sync_rewires_missing_agents_dir() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+
+    let work_agents = env.account_agents("work");
+    std::fs::remove_dir_all(&work_agents).unwrap();
+
+    env.lore()
+        .arg("accounts")
+        .arg("sync")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Re-wired account: work"));
+
+    assert!(work_agents.is_dir() && !work_agents.is_symlink());
+}
+
+#[test]
 fn sync_rewires_skills_path_replaced_by_stray_symlink() {
     let env = Env::new();
     env.lore().arg("init").assert().success();

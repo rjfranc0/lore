@@ -10,7 +10,7 @@ informational, not a refusal).
 
 **`sync`** — for each registered account, the wiring check verifies *two*
 hops for CLAUDE.md/LORE.md, plus a skills check that flipped polarity with
-this feature's real-directory model:
+the real-directory model, plus an agents check:
 ```rust
 let already_wired = claude_md.exists()
     && std::fs::read_to_string(&claude_md)
@@ -19,7 +19,8 @@ let already_wired = claude_md.exists()
     && std::fs::read_to_string(&lore_md)
         .is_ok_and(|c| c.lines().any(|l| l.trim() == format!("@{}", agents_md.display())))
     && claude_skills.is_dir()
-    && !symlink::is_link(&claude_skills);
+    && !symlink::is_link(&claude_skills)
+    && wire::claude_agents_path(&claude_dir).is_dir();
 ```
 **The skills check used to require a *live symlink*; it now requires the
 opposite — a real directory that is *not* a symlink.** This mirrors
@@ -30,7 +31,16 @@ confirms the directory exists and isn't a stray symlink, not that every
 shared skill's re-link is actually present inside it; deep re-link
 reconciliation is separate, tracked future work.
 
-**A read failure on either CLAUDE.md or LORE.md (permission denied,
+****The agents check is `is_dir()` only — it does *not* reject a symlink**,
+the opposite of the skills check. `is_dir` follows links, so a user-symlinked
+`agents/` (which `wire_claude_agents` deliberately leaves alone, see
+[wire](wire.md)) counts as wired. Requiring "not a symlink" here, as for
+skills, would make `sync` re-run the whole wiring for that account on every
+invocation and print the "leaving it untouched" warning each time. Like the
+skills check it is shape-only: it does not verify each shared agent's re-link
+is present. `sync` passes `&p.subagents_dir` to `wire_claude_dir`.
+
+A read failure on either CLAUDE.md or LORE.md (permission denied,
 non-UTF-8 content) folds into `false` via `is_ok_and`** — treated
 identically to "wrong content," not surfaced as a distinct error. This is
 deliberate: `sync`'s whole purpose is self-healing, so routing every form

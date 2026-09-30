@@ -1,4 +1,4 @@
-use crate::helpers::Env;
+use crate::helpers::{Env, make_agent};
 use std::fs;
 
 #[test]
@@ -295,4 +295,54 @@ fn recovery_reregisters_existing_behaviors_when_agents_md_deleted() {
 
     let agents_md = fs::read_to_string(env.agents_md()).unwrap();
     assert!(agents_md.contains("<!-- my-rules -->"));
+}
+
+#[test]
+fn init_account_creates_real_agents_dir_with_relinks_of_shared_agents() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    let src = env.home.path().join("src");
+    make_agent(&src, "reviewer");
+    env.lore()
+        .arg("agent")
+        .arg("add")
+        .arg("reviewer")
+        .current_dir(&src)
+        .assert()
+        .success();
+
+    env.register_account("work");
+
+    let agents = env.account_agents("work");
+    assert!(agents.is_dir() && !agents.is_symlink());
+    let link = agents.join("reviewer.md");
+    assert_eq!(
+        fs::read_link(&link).unwrap(),
+        env.agents_dir.join("agents/reviewer.md")
+    );
+}
+
+#[test]
+fn reinit_preserves_account_specific_agent_links_and_real_files() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    let src = env.home.path().join("src");
+    make_agent(&src, "scoped");
+    env.lore()
+        .arg("agent")
+        .arg("add")
+        .arg("--account")
+        .arg("work")
+        .arg("scoped")
+        .current_dir(&src)
+        .assert()
+        .success();
+    let real = env.account_agents("work").join("mine.md");
+    fs::write(&real, "hand-written").unwrap();
+
+    env.register_account("work");
+
+    assert!(env.account_agents("work").join("scoped.md").is_symlink());
+    assert_eq!(fs::read_to_string(&real).unwrap(), "hand-written");
 }

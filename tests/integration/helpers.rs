@@ -78,6 +78,10 @@ impl Env {
         self.claude_dir.join("skills")
     }
 
+    pub fn claude_agents(&self) -> PathBuf {
+        self.claude_dir.join("agents")
+    }
+
     /// Registers a named account via `lore init --account <name>`.
     pub fn register_account(&self, name: &str) {
         self.lore()
@@ -94,6 +98,10 @@ impl Env {
 
     pub fn account_behaviors(&self, name: &str) -> PathBuf {
         self.home.path().join(format!(".claude-{name}/behaviors"))
+    }
+
+    pub fn account_agents(&self, name: &str) -> PathBuf {
+        self.home.path().join(format!(".claude-{name}/agents"))
     }
 
     pub fn account_lore_md(&self, name: &str) -> PathBuf {
@@ -113,4 +121,11 @@ pub fn make_behavior(base: &Path, name: &str, entry: &str) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join(entry), "rules\n").unwrap();
     dir
+}
+
+pub fn make_agent(base: &Path, name: &str) -> PathBuf {
+    std::fs::create_dir_all(base).unwrap();
+    let file = base.join(format!("{name}.md"));
+    std::fs::write(&file, "---\nname: agent\n---\n").unwrap();
+    file
 }

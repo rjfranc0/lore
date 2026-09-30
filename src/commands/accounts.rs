@@ -61,7 +61,8 @@ pub fn sync() -> Result<()> {
                     .any(|l| l.trim() == format!("@{}", p.agents_md.display()))
             })
             && claude_skills.is_dir()
-            && !symlink::is_link(&claude_skills);
+            && !symlink::is_link(&claude_skills)
+            && wire::claude_agents_path(&claude_dir).is_dir();
 
         if !already_wired {
             let (migration_behaviors_dir, migration_register_md) = if name == "default" {
@@ -75,6 +76,7 @@ pub fn sync() -> Result<()> {
             wire::wire_claude_dir(
                 &p.agents_md,
                 &p.skills_dir,
+                &p.subagents_dir,
                 &claude_dir,
                 &migration_behaviors_dir,
                 &migration_register_md,

@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod agent;
 pub mod behavior;
 pub mod help;
 pub mod init;

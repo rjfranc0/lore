@@ -1,4 +1,4 @@
-use crate::helpers::{Env, make_behavior, make_skill};
+use crate::helpers::{Env, make_agent, make_behavior, make_skill};
 use predicates::prelude::PredicateBooleanExt;
 use std::fs;
 
@@ -13,6 +13,7 @@ fn shows_shared_headers_and_no_account_sections_by_default() {
         .success()
         .stdout(predicates::str::contains("Shared skills:"))
         .stdout(predicates::str::contains("Shared behaviors:"))
+        .stdout(predicates::str::contains("Shared agents:"))
         .stdout(predicates::str::contains("Account:").not());
 }
 
@@ -117,7 +118,7 @@ fn shows_none_for_empty_account_sections() {
     let stdout = String::from_utf8(output.stdout).unwrap();
 
     let account_section = &stdout[stdout.find("Account: personal").unwrap()..];
-    assert_eq!(account_section.matches("(none)").count(), 2);
+    assert_eq!(account_section.matches("(none)").count(), 3);
 }
 
 #[test]
@@ -282,4 +283,93 @@ fn renders_multiple_account_sections_in_alphabetical_order() {
     let alpha_pos = stdout.find("Account: alpha").unwrap();
     let zebra_pos = stdout.find("Account: zebra").unwrap();
     assert!(alpha_pos < zebra_pos);
+}
+
+fn add_agent(env: &Env, src: &std::path::Path, args: &[&str]) {
+    env.lore()
+        .arg("agent")
+        .arg("add")
+        .args(args)
+        .current_dir(src)
+        .assert()
+        .success();
+}
+
+#[test]
+fn shared_agents_show_name_without_md_and_target() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    let src = env.home.path().join("src");
+    make_agent(&src, "reviewer");
+    add_agent(&env, &src, &["reviewer"]);
+
+    let output = env.lore().arg("list").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let section = &stdout[stdout.find("Shared agents:").unwrap()..];
+    let line = section.lines().find(|l| l.contains("reviewer")).unwrap();
+
+    assert!(line.trim_start().starts_with("reviewer "));
+    assert!(!line.contains("reviewer.md  "));
+    assert!(
+        line.contains(
+            &src.canonicalize()
+                .unwrap()
+                .join("reviewer.md")
+                .display()
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn flags_broken_agent_symlink() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    let src = env.home.path().join("gone-agent-src");
+    make_agent(&src, "ghost");
+    add_agent(&env, &src, &["ghost"]);
+    fs::remove_dir_all(&src).unwrap();
+
+    env.lore()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("ghost"))
+        .stdout(predicates::str::contains("✗ broken"));
+}
+
+#[test]
+fn account_scoped_agent_appears_only_under_that_account_and_shared_relinks_are_not_repeated() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    let src = env.home.path().join("src");
+    make_agent(&src, "shared-one");
+    make_agent(&src, "work-only");
+    add_agent(&env, &src, &["shared-one"]);
+    add_agent(&env, &src, &["--account", "work", "work-only"]);
+
+    let output = env.lore().arg("list").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let account_pos = stdout.find("Account: work").unwrap();
+
+    assert!(!stdout[..account_pos].contains("work-only"));
+    let account_section = &stdout[account_pos..];
+    assert!(account_section.contains("Agents:"));
+    assert!(account_section.contains("work-only"));
+    assert!(!account_section.contains("shared-one"));
+}
+
+#[test]
+fn real_md_file_in_account_agents_dir_is_not_listed() {
+    let env = Env::new();
+    env.lore().arg("init").assert().success();
+    env.register_account("work");
+    fs::write(env.account_agents("work").join("hand-written.md"), "mine").unwrap();
+
+    env.lore()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("hand-written").not());
 }

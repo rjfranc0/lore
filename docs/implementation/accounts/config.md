@@ -41,14 +41,15 @@ itself) without a separate sort step.
 - `require_account_path(name)` — thin wrapper around `account_path` that
   turns `None` into a contextual `Err` naming the exact fix (`lore init
   --account <name>`) instead of leaving each caller to invent its own
-  message. Used by every `--account`-scoped command (`install`, `remove`)
+  message. Used by every `--account`-scoped command (`install`, `remove`,
+  `behavior`, `agent`)
   so the error text is identical regardless of which command hit the
   unregistered name.
 
 **`validate_account_name(name)`** (free function, not a `LoreConfig`
 method — it runs before any config is loaded): non-empty,
-alphanumeric-or-hyphen only. Extracted so `init`, `install --account`, and
-`remove --account` share one rejection rule instead of three copies
+alphanumeric-or-hyphen only. Extracted so `init`, `install --account`,
+`remove --account` and `agent add`/`remove --account` share one rejection rule instead of three copies
 drifting independently — see [init](init.md) for the original call site
 this was lifted from.
 
@@ -58,23 +59,28 @@ this was lifted from.
 [@/functional/accounts.md#decisions]; only `init.rs` ever needs a
 Claude-side path, and it computes that itself):
 ```rust
-pub struct Paths { pub agents_dir, pub skills_dir, pub behaviors_dir, pub agents_md: PathBuf }
+pub struct Paths { pub agents_dir, pub skills_dir, pub behaviors_dir, pub subagents_dir, pub agents_md: PathBuf }
 ```
+`subagents_dir` is `agents_dir.join("agents")` (`~/.agents/agents/`). It is
+named `subagents_dir` because `agents_dir` already names the `~/.agents/`
+*root* — a field called `agents_dir` for the subagents pool would be
+ambiguous with it.
 
 Two constructors, used in different situations:
 - **`Paths::load()`** — reads config from disk/env itself
   (`LoreConfig::config_path()` → `load_or_default()`), then derives paths.
   Used by every command that has *not* already loaded a config (`install`,
-  `remove`, `behavior`, `list`, `sync` — none of these need `LoreConfig` for
-  anything but path derivation).
+  `remove`, `behavior`, `list`, `sync`, `update` — none of these need
+  `LoreConfig` for anything but path derivation).
 - **`Paths::from_config(&config)`** — takes an already-loaded `LoreConfig`.
-  Used by `init` and `accounts::*`, which need the loaded config anyway (to
-  read/mutate `accounts`) and would otherwise read the same file twice.
+  Used by `init`, `accounts::*` and `agent add`/`remove`, which need the
+  loaded config anyway (to read/mutate or fan out over `accounts`) and would
+  otherwise read the same file twice.
 
-All four derived paths are simple joins on `agents_dir` (`skills`,
-`behaviors`, `AGENTS.md`) — there is no independent source of truth for
-these three paths beyond this one function; nothing else in the codebase
-re-derives them.
+The four derived paths are simple joins on `agents_dir` (`skills`,
+`behaviors`, `agents`, `AGENTS.md`) — there is no independent source of
+truth for these paths beyond this one function; nothing else in the
+codebase re-derives them.
 
 ## What breaks if this is touched
 

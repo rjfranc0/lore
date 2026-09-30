@@ -21,6 +21,7 @@ pub enum Command {
     Install { skills: Vec<String>, account: Option<String> },  // skills: #[arg(required = true)]
     Remove  { skills: Vec<String>, account: Option<String> },  // skills: #[arg(required = true)]
     Behavior { action: BehaviorAction },
+    Agent { action: AgentAction },
     Accounts { action: AccountsAction },
     Sync,
     Update { name: Option<String>, all: bool, path: Option<String> },
@@ -33,8 +34,15 @@ pub enum BehaviorAction {
     Add    { names: Vec<String>, account: Option<String> },
     Remove { names: Vec<String>, account: Option<String> },
 }
+pub enum AgentAction {
+    Add    { names: Vec<String>, account: Option<String> },   // names: #[arg(required = true)]
+    Remove { names: Vec<String>, account: Option<String> },   // names: #[arg(required = true)]
+}
 pub enum AccountsAction { List, Remove { name: String }, Sync }
 ```
+
+`AgentAction` deliberately mirrors `BehaviorAction` field for field, and
+`lib.rs::run()` maps `Command::Agent` to `commands::agent::add`/`remove`.
 
 `Cli` is built with `disable_version_flag = true` and
 `disable_help_subcommand = true` — both `version`/`help` are handled as
@@ -101,8 +109,9 @@ Adding a new subcommand requires remembering to update `SHORT_HELP`,
 is a silent doc-drift bug, not a compile error.
 
 As of this writing, `cli.rs`'s `Command` enum, `SHORT_HELP`, and `help.txt`'s
-COMMANDS section all agree — every variant (including `update`) is present
-in each. That agreement is incidental, not enforced: nothing in the codebase
+COMMANDS section all agree — every variant (including `update` and `agent
+add`/`remove`) is present in each, and the `update`/`list` descriptions in
+all three name agents alongside skills and behaviors. That agreement is incidental, not enforced: nothing in the codebase
 or CI would catch the three drifting apart again, so a future subcommand
 addition remains one `SHORT_HELP`/`help.txt` update away from silently
 shipping undocumented. `docs/` cannot close this gap — `help.txt` is the

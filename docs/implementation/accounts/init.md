@@ -96,6 +96,18 @@ one.
 > conflicts are outstanding) holds regardless of whether it was a conscious
 > design choice or a side effect of the loop's natural structure.
 
+**Agents get no migration step at all.** `init.rs` only does two things for
+subagents: `create_dir_all(&p.subagents_dir)` (next to the skills/behaviors
+directory creation, so a first `init` produces an empty shared
+`~/.agents/agents/`) and passing `&p.subagents_dir` into `wire_claude_dir`,
+which calls `wire_claude_agents` (see [wire](wire.md)). Nothing is moved out
+of an account's `agents/` — for *any* account, `default` included — so
+there is no `account_name == "default"` gate and no collision bail for
+agents: a real file in the way is only ever a per-entry warn-and-skip inside
+`relink_into`, and a symlinked `agents/` is warned about and left alone.
+This is the deliberate contrast with the default-account skill migration
+above.
+
 **Registration**: only inserts into `config.accounts` if the key isn't
 already present — `init` never overwrites an existing registry entry's
 path, even if the resolved `claude_dir` were somehow to differ from what's
@@ -108,6 +120,10 @@ an account's registry entry out from under it).
 - Changing this branch back to `account.is_some()` reintroduces the
   `--account default` collision: a fully-wired, registry-invisible
   `~/.claude-default/` directory.
+- Adding an agent migration step (moving real `.md` files from an
+  account's `agents/` into `~/.agents/agents/`) would break the contract
+  that hand-written agent files are never touched, and would leak one
+  account's private agents into every other account's re-links.
 - Removing the `account_name == "default"` gate on skill migration would
   make `init --account <name>` start moving a named account's own real
   skills into the shared pool again — leaking them into every other

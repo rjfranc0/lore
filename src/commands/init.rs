@@ -40,6 +40,7 @@ pub fn run(account: Option<String>) -> Result<()> {
 
     std::fs::create_dir_all(&p.skills_dir)?;
     std::fs::create_dir_all(&p.behaviors_dir)?;
+    std::fs::create_dir_all(&p.subagents_dir)?;
 
     let claude_skills = wire::claude_skills_path(&claude_dir);
 
@@ -127,6 +128,7 @@ pub fn run(account: Option<String>) -> Result<()> {
     wire::wire_claude_dir(
         &p.agents_md,
         &p.skills_dir,
+        &p.subagents_dir,
         &claude_dir,
         &migration_behaviors_dir,
         &migration_register_md,

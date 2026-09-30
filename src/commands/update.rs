@@ -14,12 +14,30 @@ use crate::{
 enum Kind {
     Skill,
     Behavior,
+    Agent,
+}
+
+impl Kind {
+    /// Skills and behaviors are directories; an agent is a single `.md` file.
+    fn is_valid_source(self, path: &Path) -> bool {
+        match self {
+            Kind::Agent => path.is_file(),
+            Kind::Skill | Kind::Behavior => path.is_dir(),
+        }
+    }
+
+    fn source_noun(self) -> &'static str {
+        match self {
+            Kind::Agent => "a file",
+            Kind::Skill | Kind::Behavior => "a directory",
+        }
+    }
 }
 
 pub fn run(name: Option<String>, all: bool, path: Option<String>) -> Result<()> {
     match (name, all) {
         (Some(_), true) => anyhow::bail!("specify either <name> or --all, not both"),
-        (None, false) => anyhow::bail!("specify a skill/behavior name or use --all"),
+        (None, false) => anyhow::bail!("specify a skill/behavior/agent name or use --all"),
         (Some(name), false) => {
             let p = Paths::load()?;
             let cwd = std::env::current_dir()?;
@@ -33,15 +51,17 @@ pub fn run(name: Option<String>, all: bool, path: Option<String>) -> Result<()> 
 }
 
 fn update_one(p: &Paths, cwd: &Path, name: &str, path: Option<String>) -> Result<()> {
-    let (dst, kind) = locate(p, name)
-        .ok_or_else(|| anyhow::anyhow!("'{name}' is not installed as a skill or behavior"))?;
+    let (dst, kind) = locate(p, name).ok_or_else(|| {
+        anyhow::anyhow!("'{name}' is not installed as a skill, behavior, or agent")
+    })?;
 
     let src = match path {
         Some(path) => PathBuf::from(path),
+        None if kind == Kind::Agent => cwd.join(format!("{}.md", agent_stem(name))),
         None => cwd.join(name),
     };
 
-    if !src.is_dir() {
+    if !kind.is_valid_source(&src) {
         anyhow::bail!("'{}' not found", src.display());
     }
 
@@ -60,14 +80,19 @@ fn update_one(p: &Paths, cwd: &Path, name: &str, path: Option<String>) -> Result
 fn update_all(p: &Paths) -> Result<()> {
     let mut candidates: Vec<(String, PathBuf, PathBuf, Kind)> = Vec::new();
     candidates.extend(
-        find_broken(&p.skills_dir)?
+        find_broken(&p.skills_dir, symlink::is_live)?
             .into_iter()
             .map(|(n, d, t)| (n, d, t, Kind::Skill)),
     );
     candidates.extend(
-        find_broken(&p.behaviors_dir)?
+        find_broken(&p.behaviors_dir, symlink::is_live)?
             .into_iter()
             .map(|(n, d, t)| (n, d, t, Kind::Behavior)),
+    );
+    candidates.extend(
+        find_broken(&p.subagents_dir, symlink::is_live_file)?
+            .into_iter()
+            .map(|(n, d, t)| (agent_stem(&n).to_string(), d, t, Kind::Agent)),
     );
 
     if candidates.is_empty() {
@@ -112,7 +137,7 @@ fn warn_on_sync_failure(name: &str, result: Result<()>) {
     }
 }
 
-/// Applies one `--all` prompt response: blank skips, a non-directory warns and skips,
+/// Applies one `--all` prompt response: blank skips, an invalid source warns and skips,
 /// otherwise relinks. Factored out from `update_all`'s loop so the decision logic is
 /// testable without driving real stdin.
 fn relink_candidate(
@@ -130,10 +155,11 @@ fn relink_candidate(
     }
 
     let src = PathBuf::from(trimmed);
-    if !src.is_dir() {
+    if !kind.is_valid_source(&src) {
         output::warn(&format!(
-            "'{}' is not a directory, skipped {name}",
-            src.display()
+            "'{}' is not {}, skipped {name}",
+            src.display(),
+            kind.source_noun()
         ));
         return Ok(());
     }
@@ -159,7 +185,16 @@ fn locate(p: &Paths, name: &str) -> Option<(PathBuf, Kind)> {
         return Some((behavior_path, Kind::Behavior));
     }
 
+    let agent_path = p.subagents_dir.join(format!("{}.md", agent_stem(name)));
+    if symlink::is_link(&agent_path) || agent_path.is_file() {
+        return Some((agent_path, Kind::Agent));
+    }
+
     None
+}
+
+fn agent_stem(name: &str) -> &str {
+    name.strip_suffix(".md").unwrap_or(name)
 }
 
 fn relink(src: &Path, dst: &Path) -> Result<()> {
@@ -194,7 +229,7 @@ fn sync_behavior_entry(
     Ok(())
 }
 
-fn find_broken(dir: &Path) -> Result<Vec<(String, PathBuf, PathBuf)>> {
+fn find_broken(dir: &Path, is_live: fn(&Path) -> bool) -> Result<Vec<(String, PathBuf, PathBuf)>> {
     if !dir.exists() {
         return Ok(Vec::new());
     }
@@ -203,7 +238,7 @@ fn find_broken(dir: &Path) -> Result<Vec<(String, PathBuf, PathBuf)>> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        if symlink::is_link(&path) && !symlink::is_live(&path) {
+        if symlink::is_link(&path) && !is_live(&path) {
             let target = std::fs::read_link(&path)?;
             broken.push((
                 entry.file_name().to_string_lossy().into_owned(),
@@ -224,6 +259,7 @@ mod tests {
             agents_dir: tmp.path().to_path_buf(),
             skills_dir: tmp.path().join("skills"),
             behaviors_dir: tmp.path().join("behaviors"),
+            subagents_dir: tmp.path().join("agents"),
             agents_md: tmp.path().join("AGENTS.md"),
         }
     }
@@ -243,6 +279,82 @@ mod tests {
         let (path, kind) = locate(&p, "dup").unwrap();
         assert_eq!(kind, Kind::Skill);
         assert_eq!(path, p.skills_dir.join("dup"));
+    }
+
+    #[test]
+    fn locate_finds_agent_by_name_with_or_without_md() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = test_paths(&tmp);
+        std::fs::create_dir_all(&p.subagents_dir).unwrap();
+        let src = tmp.path().join("rev.md");
+        std::fs::write(&src, "x").unwrap();
+        symlink::create(&src, &p.subagents_dir.join("rev.md")).unwrap();
+
+        for name in ["rev", "rev.md"] {
+            let (path, kind) = locate(&p, name).unwrap();
+            assert_eq!(kind, Kind::Agent);
+            assert_eq!(path, p.subagents_dir.join("rev.md"));
+        }
+    }
+
+    #[test]
+    fn locate_prefers_skill_and_behavior_over_agent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = test_paths(&tmp);
+        std::fs::create_dir_all(&p.skills_dir).unwrap();
+        std::fs::create_dir_all(&p.behaviors_dir).unwrap();
+        std::fs::create_dir_all(&p.subagents_dir).unwrap();
+
+        let dir_src = tmp.path().join("dir-src");
+        std::fs::create_dir_all(&dir_src).unwrap();
+        let file_src = tmp.path().join("dup.md");
+        std::fs::write(&file_src, "x").unwrap();
+        symlink::create(&file_src, &p.subagents_dir.join("dup.md")).unwrap();
+        symlink::create(&dir_src, &p.behaviors_dir.join("dup")).unwrap();
+
+        assert_eq!(locate(&p, "dup").unwrap().1, Kind::Behavior);
+
+        symlink::create(&dir_src, &p.skills_dir.join("dup")).unwrap();
+        assert_eq!(locate(&p, "dup").unwrap().1, Kind::Skill);
+    }
+
+    #[test]
+    fn update_one_relinks_agent_to_cwd_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = test_paths(&tmp);
+        std::fs::create_dir_all(&p.subagents_dir).unwrap();
+        symlink::create(&tmp.path().join("gone.md"), &p.subagents_dir.join("rev.md")).unwrap();
+
+        let cwd = tmp.path().join("cwd");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::write(cwd.join("rev.md"), "x").unwrap();
+
+        update_one(&p, &cwd, "rev", None).unwrap();
+
+        let resolved = std::fs::read_link(p.subagents_dir.join("rev.md")).unwrap();
+        assert_eq!(resolved, cwd.join("rev.md"));
+    }
+
+    #[test]
+    fn relink_candidate_skips_agent_input_that_is_not_a_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dst = tmp.path().join("dangling-link.md");
+        symlink::create(&tmp.path().join("does-not-exist.md"), &dst).unwrap();
+
+        let a_dir = tmp.path().join("a-dir");
+        std::fs::create_dir_all(&a_dir).unwrap();
+
+        relink_candidate(
+            "rev",
+            &dst,
+            &a_dir.to_string_lossy(),
+            Kind::Agent,
+            None,
+            &tmp.path().join("AGENTS.md"),
+        )
+        .unwrap();
+
+        assert!(!symlink::is_live_file(&dst));
     }
 
     #[test]

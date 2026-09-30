@@ -24,6 +24,15 @@ session start.
   Claude account** (`--account <name>`, symlinked into
   `~/.claude-<name>/behaviors/`, registered in that account's own
   `LORE.md`) — see [behaviors](behaviors.md#feature-behavior-add--remove).
+- **Subagent** (also just **agent** in command names and `list` output): a
+  single Markdown file (`<name>.md`) defining a specialized agent, which
+  Claude Code discovers from its `agents/` directory. Unlike a behavior it is
+  never registered in `AGENTS.md`/`LORE.md`; unlike a skill it is one file,
+  not a directory. It follows the same **shared** (`~/.agents/agents/<name>.md`,
+  re-linked into every account) vs. **scoped** (`~/.claude-<account>/agents/<name>.md`
+  directly) model, and its link keeps the `.md` extension — see
+  [agents](agents.md#feature-agent-add--remove). Not to be confused with
+  `agents_dir`, which names the `~/.agents/` root.
 - **Built-in behavior**: a behavior directory created by lore itself
   (currently only `from-claude`, see [accounts.md](../accounts.md) for the
   migration that creates it) rather than symlinked from an external repo.
@@ -41,12 +50,16 @@ session start.
 - [behaviors](behaviors.md) — `lore behavior add`/`remove`: the same
   shared/scoped model for always-on instruction directories, wired into
   `AGENTS.md` or a per-account `LORE.md`.
+- [agents](agents.md) — `lore agent add`/`remove`: the same shared/scoped
+  model for single-file subagents; a symlink in `agents/` is the whole
+  integration (no `AGENTS.md`/`LORE.md` entry).
 - [sync](sync.md) — `lore sync`: reconciles `AGENTS.md` and every
   per-account `LORE.md` against what's actually on disk.
-- [list](list.md) — `lore list`: shows every installed skill/behavior,
+- [list](list.md) — `lore list`: shows every installed skill/behavior/agent,
   shared and per-account, flagging broken symlinks.
-- [update](update.md) — `lore update`: re-points a skill/behavior's
-  symlink (and its `AGENTS.md` entry) after its source repo has moved.
+- [update](update.md) — `lore update`: re-points a skill/behavior/agent's
+  symlink (and a behavior's `AGENTS.md` entry) after its source repo has
+  moved.
 
 ## Files
 
@@ -55,10 +68,11 @@ session start.
 | `~/.agents/AGENTS.md` | Universal agent instructions — format detailed in [@/implementation/agent-config.md#agentsmd-format] |
 | `~/.agents/skills/` | Skill symlinks |
 | `~/.agents/behaviors/` | Behavior symlinks and built-ins |
+| `~/.agents/agents/` | Subagent symlinks (`<name>.md`) |
 
 ## Non-goals (this domain)
 
-- No "update" command for skill/behavior *content* — content always lives
+- No "update" command for skill/behavior/agent *content* — content always lives
   in the source repo and is read live through the symlink; `lore
   install`/`add` only ever (re)point a symlink, they never pull or sync
   repo contents. `lore update` (see [update](update.md#feature-update))
@@ -74,6 +88,13 @@ session start.
   target-relinking `update` does.) See [@/functional/accounts.md] for what
   else varies per account.
 
-Both skill scoping and behavior scoping are no longer non-goals — see
-[skills](skills.md#feature-skill-install--remove) and
-[behaviors](behaviors.md#feature-behavior-add--remove).
+- No per-account **agent update** either: `lore update <agent>` and
+  `update --all` only re-point the shared `~/.agents/agents/` links, exactly
+  like skills. Formats and locations for other tools' agents (Codex,
+  Gemini, Cursor, OpenCode, Copilot), project-level `.claude/agents/`, and
+  frontmatter validation are out of scope for [agents](agents.md).
+
+Skill scoping, behavior scoping and agent scoping are no longer non-goals — see
+[skills](skills.md#feature-skill-install--remove),
+[behaviors](behaviors.md#feature-behavior-add--remove) and
+[agents](agents.md#feature-agent-add--remove).
