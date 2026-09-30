@@ -19,7 +19,8 @@ COMMANDS
        init [--account <name>]
               Bootstrap ~/.agents/ and wire Claude.
 
-              Creates AGENTS.md, skills/, and behaviors/ if missing.
+              Creates AGENTS.md, skills/, behaviors/, and agents/ if
+              missing.
               Creates/updates LORE.md (fully lore-owned) to import
               AGENTS.md. Then wires CLAUDE.md surgically:
 
@@ -39,6 +40,11 @@ COMMANDS
               and left untouched.
 
               Symlinks ~/.claude/skills → ~/.agents/skills.
+
+              Also ensures ~/.claude/agents/ is a real directory holding
+              a re-link for every shared agent. Existing entries there
+              always survive — the directory is added to, never
+              rebuilt.
 
               On a skill-name collision, init stops before writing
               CLAUDE.md so config is never left half-wired. If
@@ -68,7 +74,8 @@ COMMANDS
        accounts sync
               Re-wire any registered account whose wiring is broken
               on disk (missing/incorrect CLAUDE.md or LORE.md import,
-              or a missing/dead skills symlink). Reports each action,
+              or a missing/dead skills symlink, or a missing agents/
+              directory). Reports each action,
               or that accounts are already in sync.
 
        install <skill> [...]
@@ -126,6 +133,43 @@ COMMANDS
                      @~/.agents/AGENTS.md header line in LORE.md is
                      never removed.
 
+       agent add <name> [...] [--account <name>]
+              Add subagents from the current directory. A subagent is a
+              single <name>.md file that Claude discovers from its
+              agents/ directory; nothing is registered in AGENTS.md.
+              Creates:
+                  ~/.agents/agents/<name>.md → $PWD/<name>.md
+                  ~/.claude*/agents/<name>.md → ~/.agents/agents/<name>.md
+              (one re-link per registered account).
+
+              A trailing .md on the name is stripped, so
+              'agent add reviewer.md' equals 'agent add reviewer'. If
+              $PWD/<name>.md is missing, lore warns, skips that name and
+              carries on with the rest. On duplicate, logs both paths
+              like install does. A real (non-symlink) .md already in an
+              account's agents/ is left in place and never migrated; a
+              shared re-link that collides with one is skipped with a
+              warning.
+
+              --account <name>
+                     Links $PWD/<name>.md straight into
+                     ~/.claude-<name>/agents/ only. The shared pool and
+                     other accounts are untouched. '--account default'
+                     scopes to ~/.claude/agents/ — it never falls back
+                     to the shared behavior. An unregistered account is
+                     an error and nothing is created.
+
+       agent remove <name> [...] [--account <name>]
+              Removes the shared symlink and each account's re-link,
+              but only re-links that still point at the shared entry —
+              an account-scoped link of the same name to another
+              source is left in place with a warning. Source files are
+              never touched. Removing a name that isn't installed warns
+              and exits 0.
+
+              --account <name>
+                     Removes only ~/.claude-<name>/agents/<name>.md.
+
        sync
               Reconcile AGENTS.md against behaviors currently on disk.
 
@@ -137,12 +181,16 @@ COMMANDS
               Requires 'lore init' to have run first.
 
        update <name> [--path <path>]
-              Re-link a skill or behavior whose source has moved.
+              Re-link a skill, behavior or agent whose source has moved.
+              When a name exists as more than one type, the lookup
+              order is skill → behavior → agent.
               Relinks unconditionally — even if the symlink is already
               healthy, not just when broken.
 
                   Without --path: relinks to $PWD/<name>
+                                  ($PWD/<name>.md for an agent)
                   With --path:    relinks to <path> instead
+                                  (an agent's <path> must be a file)
 
               For behaviors, also re-resolves the entry file and updates
               the AGENTS.md @path line if the entry filename changed. If
@@ -152,12 +200,13 @@ COMMANDS
               with a warning.
 
        update --all
-              Scan ~/.agents/skills/ and ~/.agents/behaviors/ for broken
-              symlinks and relink them interactively, prompting for a
-              new path per entry.
+              Scan ~/.agents/skills/, ~/.agents/behaviors/ and
+              ~/.agents/agents/ for broken symlinks and relink them
+              interactively, prompting for a new path per entry.
 
                   blank answer            skip this entry, continue
                   non-directory answer    warn, skip, continue
+                                          (non-file for an agent)
                   AGENTS.md update fails  warn, continue (symlink itself
                                           still relinked)
 
@@ -165,9 +214,13 @@ COMMANDS
               is broken.
 
        list
-              Print all installed skills and behaviors with symlink
-              targets. Flags broken symlinks with ✗ broken.
+              Print all installed skills, behaviors and agents with
+              symlink targets. Flags broken symlinks with ✗ broken.
               Built-in behaviors (e.g. from-claude) show as (built-in).
+              Agents are shown without their .md extension; each
+              account lists only its own account-scoped agents, and
+              hand-written .md files in an account's agents/ are not
+              listed.
 
        version
               Print the lore version string.
@@ -208,10 +261,12 @@ FILES
        ~/.agents/AGENTS.md          Universal agent instructions
        ~/.agents/skills/            Skill symlinks
        ~/.agents/behaviors/         Behavior symlinks + built-ins
+       ~/.agents/agents/            Subagent symlinks (<name>.md → source)
        ~/.claude/LORE.md            Managed by lore: @import → AGENTS.md
        ~/.claude/CLAUDE.md          Managed by lore: @import → LORE.md
                                      (surgical — only this one line is lore's)
        ~/.claude/skills             Symlink → ~/.agents/skills
+       ~/.claude/agents/            Real dir: re-links of shared agents
        ~/.claude-<name>/            Per-account Claude dir (--account <name>)
 
 EXAMPLES
@@ -228,6 +283,11 @@ EXAMPLES
 
        Remove a behavior (cleans AGENTS.md too):
            lore behavior remove restaurant-rules
+
+       Add a subagent (shared, or scoped to one account):
+           cd ~/repos/ai-restaurant/agents
+           lore agent add sous-chef
+           lore agent add --account work sous-chef
 
        List with status:
            lore list
