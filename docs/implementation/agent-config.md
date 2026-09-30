@@ -149,10 +149,17 @@ only the thin `run()` wrapper touches that I/O. From there:
   bare name.
 
   `add(names, account)` resolves one target dir: `Paths::subagents_dir`
-  (shared), or — scoped — `validate_account_name` →
-  `require_account_path` → `wire::claude_agents_path`, all before
-  `create_dir_all(target)`, so an unregistered account fails with nothing
-  created. Per name, `src = cwd/<name>.md`, `dst = target/<name>.md`, in this
+  (shared), or — scoped — the private `scoped_agents_dir(config, account)`:
+  `validate_account_name` → `require_account_path` →
+  **`wire::agents_dir_is_symlink` check** → `wire::claude_agents_path`, all
+  before `create_dir_all(target)`, so an unregistered account or a
+  user-symlinked `agents/` fails with nothing created. The symlink case
+  `bail!`s (exit 1, through the existing `anyhow` error printer) with
+  `<path> is a symlink — lore does not modify through a user-managed agents
+  directory; replace it with a real directory to use --account`: a symlinked
+  `agents/` may alias the shared pool or another account, so writing through
+  it would break `--account`'s isolation (see
+  [@/implementation/accounts/wire.md#module-wirers]). Per name, `src = cwd/<name>.md`, `dst = target/<name>.md`, in this
   order: `src` not a file → warn `'<name>.md' not found in <cwd>` and
   `continue` (no fan-out for that name); `dst` is a symlink → warn `<name>
   already installed` with `existing`/`attempted` notes (same format as
@@ -162,13 +169,20 @@ only the thin `run()` wrapper touches that I/O. From there:
   outcomes**, not just after a fresh install: `wire::relink_agent` over every
   `config.accounts` entry (default included, since it is registered), which
   self-heals a missing re-link and is a no-op where one exists. Scoped `add`
-  never fans out.
+  never fans out. For an account whose `agents/` is a symlink,
+  `relink_agent` warns and skips (returns `Ok`), so the fan-out carries on
+  over the remaining accounts — a per-account skip, where scoped commands
+  fail outright.
 
   `remove(names, account)` mirrors it. Shared: remove `subagents_dir/<name>.md`
   if `is_link`, else warn `<name> is not installed`; then
   `wire::unlink_account_agent` over every account **regardless** of whether the
-  shared link existed, so orphaned re-links are still cleaned. Scoped:
-  validate/resolve the account, remove the link if `is_link`, else warn
+  shared link existed, so orphaned re-links are still cleaned (an account with
+  a symlinked `agents/` is warned about and skipped; when that symlink aliases
+  the shared pool, the shared link's removal already removed its content).
+  Scoped: resolve the account through the same `scoped_agents_dir` (so the
+  symlink refusal applies before anything is removed), remove the link if
+  `is_link`, else warn
   `<name> is not installed in account '<account>'` — a real file there is
   therefore reported as "not installed" and left in place. Source files are
   never touched.
@@ -334,6 +348,13 @@ only the thin `run()` wrapper touches that I/O. From there:
   `is_live_file` accept directories) would misreport broken agent links: a
   link retargeted at a directory would look healthy in `list` and be skipped
   by `update --all`.
+- Dropping the `scoped_agents_dir` symlink check, or turning its `bail!`
+  into a warn-and-continue, lets `--account` write into or delete from a
+  directory the account does not own (the shared pool, another account, a
+  user folder). It must fail rather than skip: the user named one account,
+  so a silent no-op would report success for an install that did not
+  happen. Conversely, making the shared fan-out fail the same way would let
+  one user-managed account abort re-links for all the others.
 - Changing the name normalization in `agent.rs` (`strip_suffix(".md")` runs
   once, after the trailing-slash strip) changes which files a name maps to;
   `update`'s `agent_stem` is an independent copy of the same one-`.md` rule,

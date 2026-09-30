@@ -48,6 +48,28 @@ shared re-link would land on one, that one re-link is skipped with a
 warning; the rest of the run still succeeds. The same protection covers a
 scoped or shared `add` whose destination is occupied by a real file.
 
+**A symlinked `agents/` is never written or deleted through.** When an
+account's `~/.claude-<account>/agents/` is itself a symlink (the user's own
+setup — it may alias the shared pool, another account, or an unrelated
+directory; a dangling one counts too), lore treats the directory as
+user-managed. Otherwise `--account` would stop meaning "this account only":
+a scoped add could insert into the shared pool and every account would pick
+it up, and a scoped remove could delete the shared link and break another
+account's re-link. The two scopes react differently, on purpose:
+
+- **Scoped** `add`/`remove --account <name>` **fail** (exit 1) with an error
+  naming the symlink and asking for a real directory, before anything is
+  created or removed — the user named exactly one account, so a silent no-op
+  would hide the failure.
+- **Shared** `add`/`remove` **warn and skip** that account's re-link or
+  un-link and carry on with the others — one user-managed account must not
+  abort a fan-out over many. The shared link itself is still created or
+  removed as usual.
+
+This is the same stance `init`/`accounts sync` already take toward a
+symlinked `agents/` (see [@/functional/accounts.md]); a real directory
+restores normal behavior.
+
 **Acceptance conditions**:
 - Given `<name>.md` exists in `$PWD`, when `lore agent add <name>` runs (no
   `--account`), then `~/.agents/agents/<name>.md` is a symlink to
@@ -72,6 +94,16 @@ scoped or shared `add` whose destination is occupied by a real file.
 - Given an account holds a scoped link of the same name pointing at a
   different source, when a shared `lore agent remove <name>` runs, then that
   link is left in place with a warning.
+- Given `~/.claude-work/agents/` is a symlink (to the shared pool, another
+  account, or any other directory), when `lore agent add --account work
+  <name>` or `lore agent remove --account work <name>` runs, then it exits 1
+  with an error naming that path, and neither the symlink's target directory,
+  the shared pool, nor any other account changes.
+- Given the same symlinked `~/.claude-work/agents/`, when a shared `lore
+  agent add` or `remove` runs, then lore warns that it is skipping that
+  account, still creates/removes the shared link and the other accounts'
+  re-links, and exits 0 — nothing is written to or deleted from the
+  symlink's target.
 - Given no accounts are registered, a shared add/remove only touches
   `~/.agents/agents/` — the fan-out is empty, not an error.
 
